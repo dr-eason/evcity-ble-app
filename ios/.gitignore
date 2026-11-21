@@ -1,0 +1,24 @@
+# XcodeGen 生成的工程和编译输出
+*.xcodeproj/
+*.xcworkspace/
+build/
+DerivedData/
+.swiftpm/
+Core/.build/
+
+# build_ui.sh 拷进来的 Vue 界面（由 ui 源码编出来，不单独维护）
+App/Resources/Web/index.html
+
+# 本机的签名设置
+Config/Local.xcconfig
+
+# 签名材料一律不进仓库
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# 截图脚本的输出
+tools/mock-web/out/
+
+.DS_Store

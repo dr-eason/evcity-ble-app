@@ -1,0 +1,294 @@
+# iOS 构建（GitHub Actions，macOS runner）。
+#
+# 这个文件在 AC-V2 里放在 AC06/tools/ble-ios/ci/ios.yml，不在 AC-V2 的 .github/ 下，所以在 AC-V2 里不会跑。
+# 镜像脚本（mirror/mirror_ble.sh）把它放到公开仓 dr-eason/evcity-ble-app 的 .github/workflows/ios.yml。
+# 下面的路径都按公开仓的目录来写：ui/ 是 Vue 界面，ios/ 是 iOS 工程。
+#
+# 要改工作流，改 AC-V2 里的这一份，再镜像过去。说明见 ios/说明.md。
+name: iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_ipa:
+        description: "同时打签名的真机包（.ipa）。要先在仓库 Secrets 里配好证书和描述文件"
+        type: boolean
+        default: false
+      export_method:
+        description: "真机包的类型，要和描述文件的类型一致"
+        type: choice
+        default: ad-hoc
+        options:
+          - ad-hoc
+          - development
+      bundle_id:
+        description: "真机包的 Bundle ID，要和描述文件里的一致"
+        type: string
+        default: com.evcity.ac06ble
+  push:
+    paths:
+      - "ios/**"
+      - "ui/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - "ui/**"
+      - ".github/workflows/ios.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: 模拟器构建和单元测试（Mock BLE）
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build Vue UI and copy it into the iOS bundle
+        run: bash ios/build_ui.sh
+
+      - name: UI unit tests
+        # 部分测试还会对照 AC-V2 里的固件和 AndroidManifest（lte / tz / charger-clock），
+        # 公开仓没有那些文件。这里只跑不依赖它们的测试；完整套在 AC-V2 本地跑。
+        run: |
+          node --test \
+            ui/test/ota-window.test.mjs \
+            ui/test/wifi-rssi.test.mjs \
+            ui/test/modver.test.mjs \
+            ui/test/time-sync.test.mjs \
+            ui/test/profile.test.mjs
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Core package tests (host)
+        run: swift test --package-path ios/Core
+
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          def version(key):
+              tail = key.rsplit("iOS-", 1)[-1]
+              return [int(part) for part in tail.split("-") if part.isdigit()]
+          for runtime in sorted((k for k in devices if "iOS-" in k), key=version, reverse=True):
+              for device in devices[runtime]:
+                  if device["name"].startswith("iPhone"):
+                      print(device["udid"])
+                      sys.exit(0)
+          sys.exit(1)
+          ')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep "$udid"
+
+      - name: Build and test (iOS Simulator, unsigned, Mock BLE)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild build test \
+            -project EVCITYAC.xcodeproj \
+            -scheme EVCITYAC \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            EVC_MOCK_BLE=1 \
+            2>&1 | tee build/xcodebuild-simulator.log
+
+      - name: Zip the simulator app
+        working-directory: ios
+        run: |
+          app="build/DerivedData/Build/Products/Debug-iphonesimulator/EVCITYAC.app"
+          test -f "$app/Web/index.html"
+          test -f "$app/Bridge/evc-shim.js"
+          ditto -c -k --keepParent "$app" build/EVCITYAC-simulator.zip
+          ls -l build/EVCITYAC-simulator.zip
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: EVCITYAC-simulator
+          path: ios/build/EVCITYAC-simulator.zip
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-simulator-log
+          path: ios/build/xcodebuild-simulator.log
+          if-no-files-found: ignore
+
+  # 签名的真机包。默认不跑：只有手动触发并且勾了 build_ipa 才跑。
+  # 需要的 Secrets（Settings → Secrets and variables → Actions）：
+  #   APPLE_TEAM_ID                    Team ID
+  #   BUILD_CERTIFICATE_BASE64         .p12 证书（含私钥）的 base64
+  #   P12_PASSWORD                     导出 .p12 时设的密码
+  #   BUILD_PROVISION_PROFILE_BASE64   .mobileprovision 的 base64
+  #   KEYCHAIN_PASSWORD                随便定一个，只用来锁 CI 里的临时钥匙串
+  device-ipa:
+    name: 签名真机包（手动）
+    if: github.event_name == 'workflow_dispatch' && inputs.build_ipa
+    needs: simulator
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      EXPORT_METHOD: ${{ inputs.export_method }}
+      BUNDLE_ID: ${{ inputs.bundle_id }}
+    steps:
+      - name: Check secrets
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          missing=0
+          for name in APPLE_TEAM_ID BUILD_CERTIFICATE_BASE64 P12_PASSWORD BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::缺少 Secret：$name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build Vue UI and copy it into the iOS bundle
+        run: bash ios/build_ui.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Install certificate and provisioning profile
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -eu
+          cert="$RUNNER_TEMP/build_certificate.p12"
+          profile="$RUNNER_TEMP/build.mobileprovision"
+          keychain="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$cert"
+          printf '%s' "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$profile"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$cert" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain" >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+
+          security cms -D -i "$profile" > "$RUNNER_TEMP/profile.plist"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")"
+          profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$profile" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          {
+            echo "PROFILE_NAME=$profile_name"
+            echo "PROFILE_UUID=$profile_uuid"
+          } >> "$GITHUB_ENV"
+          rm -f "$cert" "$profile"
+
+      - name: Archive
+        working-directory: ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          if [ "$EXPORT_METHOD" = "development" ]; then
+            identity="Apple Development"
+          else
+            identity="Apple Distribution"
+          fi
+          mkdir -p build
+          xcodebuild archive \
+            -project EVCITYAC.xcodeproj \
+            -scheme EVCITYAC \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/EVCITYAC.xcarchive \
+            -derivedDataPath build/DerivedData \
+            EVC_TEAM_ID="$APPLE_TEAM_ID" \
+            EVC_BUNDLE_ID="$BUNDLE_ID" \
+            EVC_CODE_SIGN_STYLE=Manual \
+            EVC_SIGN_IDENTITY="$identity" \
+            EVC_PROFILE="$PROFILE_NAME" \
+            EVC_MOCK_BLE=0 \
+            2>&1 | tee build/xcodebuild-archive.log
+
+      - name: Export ipa
+        working-directory: ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          plist="$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :method string $EXPORT_METHOD" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" "$plist" >/dev/null
+          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :stripSwiftSymbols bool true" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$BUNDLE_ID string $PROFILE_NAME" "$plist"
+          xcodebuild -exportArchive \
+            -archivePath build/EVCITYAC.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist "$plist"
+          ls -l build/ipa
+
+      - name: Upload ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: EVCITYAC-${{ inputs.export_method }}-ipa
+          path: ios/build/ipa/*.ipa
+          if-no-files-found: error
+
+      - name: Remove keychain and profile
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+          if [ -n "${PROFILE_UUID:-}" ]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          fi

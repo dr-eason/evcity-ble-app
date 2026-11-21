@@ -1,0 +1,27 @@
+# 依赖和编译输出
+node_modules/
+ui/dist/
+# vite 把单文件的 index.html 写到 ui 的上一级 assets/（见 ui/vite.config.js）
+/assets/
+
+ios/build/
+ios/DerivedData/
+ios/*.xcodeproj/
+ios/*.xcworkspace/
+ios/.swiftpm/
+ios/Core/.build/
+ios/App/Resources/Web/index.html
+ios/Config/Local.xcconfig
+
+# 签名材料一律不进仓库
+*.p12
+*.pfx
+*.p8
+*.pem
+*.cer
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+
+.DS_Store

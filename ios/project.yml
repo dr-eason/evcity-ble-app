@@ -1,0 +1,81 @@
+# XcodeGen 工程描述。生成 Xcode 工程：xcodegen generate（在本目录）。
+# 生成的 EVCITYAC.xcodeproj 不进仓库，改工程设置改这里和 Config/Base.xcconfig。
+name: EVCITYAC
+
+options:
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+packages:
+  EVCCore:
+    path: Core
+
+targets:
+  EVCITYAC:
+    type: application
+    platform: iOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources/Assets.xcassets
+      # 这两个目录原样拷进 App：Bridge 是 window.EVC 的桥脚本，Web 是 build_ui.sh 拷来的 Vue 界面。
+      - path: App/Resources/Bridge
+        type: folder
+        buildPhase: resources
+      - path: App/Resources/Web
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: EVCCore
+    settings:
+      base:
+        PRODUCT_NAME: EVCITYAC
+        PRODUCT_BUNDLE_IDENTIFIER: $(EVC_BUNDLE_ID)
+        MARKETING_VERSION: $(EVC_VERSION)
+        CURRENT_PROJECT_VERSION: $(EVC_BUILD)
+        INFOPLIST_FILE: App/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        # EVC_MOCK_BLE=1 时给 Swift 加上 EVC_MOCK_BLE 这个条件编译符号，见 Config/Base.xcconfig。
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) $(EVC_MOCK_FLAG_$(EVC_MOCK_BLE))
+        # 签名全部从 EVC_ 开头的变量来，默认是占位，见 Config/Base.xcconfig。
+        DEVELOPMENT_TEAM: $(EVC_TEAM_ID)
+        CODE_SIGN_STYLE: $(EVC_CODE_SIGN_STYLE)
+        CODE_SIGN_IDENTITY: $(EVC_SIGN_IDENTITY)
+        PROVISIONING_PROFILE_SPECIFIER: $(EVC_PROFILE)
+
+  # 和 Core 包里的测试是同一批文件，这里让它们也能在模拟器上跟着 xcodebuild test 跑。
+  EVCITYACTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Core/Tests/EVCCoreTests
+    dependencies:
+      - package: EVCCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(EVC_BUNDLE_ID).coretests
+        SWIFT_VERSION: "5.0"
+
+schemes:
+  EVCITYAC:
+    build:
+      targets:
+        EVCITYAC: all
+        EVCITYACTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - EVCITYACTests
+    archive:
+      config: Release

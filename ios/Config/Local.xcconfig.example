@@ -1,0 +1,7 @@
+// 拷成 Local.xcconfig 再改。Local.xcconfig 不进仓库。
+
+// Apple Developer 的 Team ID，在 developer.apple.com → Membership details 里看。
+EVC_TEAM_ID = ABCDE12345
+
+// 如果登记的 Bundle ID 和占位的不一样，在这里换。
+// EVC_BUNDLE_ID = com.evcity.ac06ble

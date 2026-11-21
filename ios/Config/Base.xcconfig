@@ -1,0 +1,31 @@
+// EVCITY AC（iOS）的工程设置。project.yml 里的 target 设置引用这里的 EVC_ 变量。
+// 本机要改的（Team ID 等）写在同目录的 Local.xcconfig，那个文件不进仓库。
+
+// ---- 标识和版本：和 Android 的 AndroidManifest.xml 保持一致 ----
+// 占位的 Bundle ID，上架或做描述文件前换成在 Apple Developer 里登记的那个。
+EVC_BUNDLE_ID = com.evcity.ac06ble
+EVC_VERSION = 2.6.16
+EVC_BUILD = 2616
+
+// ---- 签名：全部是占位 ----
+// Team ID（10 位字母数字）。留空时只能编模拟器，或者带 CODE_SIGNING_ALLOWED=NO。
+EVC_TEAM_ID =
+// Automatic：Xcode 登录了开发者账号时自动管理证书和描述文件。CI 里用 Manual。
+EVC_CODE_SIGN_STYLE = Automatic
+EVC_SIGN_IDENTITY = Apple Development
+// Manual 时填描述文件的名字。
+EVC_PROFILE =
+
+// ---- Mock BLE ----
+// 1：蓝牙调用由页面里的假充电桩应答，不碰 CoreBluetooth。模拟器上不管这个值都是 Mock。
+// 命令行：xcodebuild ... EVC_MOCK_BLE=1
+EVC_MOCK_BLE = 0
+EVC_MOCK_FLAG_0 =
+EVC_MOCK_FLAG_1 = EVC_MOCK_BLE
+
+// ---- 固件升级选文件 ----
+// NO：用 WKWebView 自带的 <input type="file"> 菜单（默认）。
+// YES：点「选择固件文件」时直接打开系统的「文件」选择器。
+EVC_NATIVE_FILE_PICKER = NO
+
+#include? "Local.xcconfig"
