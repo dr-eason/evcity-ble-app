@@ -109,8 +109,8 @@
         </span>
         <input v-model="gateSave" type="checkbox">
       </label>
-      <p class="note">{{ t(gateNote) }}</p>
-      <button class="go" @click="submitGate">{{ t('连接') }}</button>
+      <p class="note">{{ gateNoteShown }}</p>
+      <button class="go" :disabled="gateLockLeft > 0" @click="submitGate">{{ gateLockLeft > 0 ? t('已锁定（{s} 秒）', { s: gateLockLeft }) : t('连接') }}</button>
     </section>
 
     <section v-else-if="page === 'lang'" class="body">
@@ -587,6 +587,7 @@ import { LTE_PROTOS, apnCommand, apnError, lteCellText, lteExclusive, lteHomeTex
 import { TZ_ZONES, parseSchedLine, parseTzAck, saveZone, tzIndex, tzLabel, tzSupported } from "./tz.js";
 import { CLOCK_RESYNC_MS, CLOCK_RETRY_MS, chargerClock, parseTimeGet, readChargerTime, timeGetSupported } from "./charger-clock.js";
 import { heartbeatCarriesTime, parseTimeAck, phoneTzMinutes, runTimeSync, zoneRereadDue } from "./time-sync.js";
+import { AUTH_LOCK_SECONDS, authDecide, commandName, isOtaCommand, lockLeft, lockNote, parseAuthLine, pinOk, queueRefused, resendable } from "./auth.js";
 import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, ocppUrlOk, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "./profile.js";
 
 const langIds = languages.map((item) => item.id);
@@ -691,6 +692,31 @@ const gateAuto = ref(false);
 const gateNote = ref("");
 const gatePass = ref("");
 const gateEnter = ref(false);
+/* 2.7.2 的蓝牙鉴权（规则见 auth.js）。
+ *   gateLockLeft    锁定还剩几秒，0 = 没有在倒计时。密码页的按钮和提示跟着它变。
+ *   gateLockKnown   固件给了剩余秒数。没给（早期 2.7.2）就只说“稍后再试”，不倒计时。
+ *   gateLockRetry   锁定结束后自动再试一次用的密码（锁定前没来得及核对的那一个）。
+ *   gateReauth      正在悄悄重发 AUTH：桩那边把这条连接的鉴权作废了（蓝牙恢复流程、
+ *                   模组换了连接），界面不动，通过后把被拒的命令补发。
+ *   gateRefused     等着补发的命令；lastSent 是每个命令名最后发出去的那一条。 */
+const gateLockLeft = ref(0);
+const gateLockKnown = ref(false);
+let gateLockUntil = 0;
+let gateLockTimer = 0;
+let gateLockRetry = "";
+let gateReauth = false;
+let gateReauthTries = 0;
+let gateRefused = [];
+const lastSent = {};
+/* 密码页上那一行提示。倒计时走着的时候是“已锁定，N 秒后可以再试”；固件没给秒数时
+ * gateNote 里就是“已锁定，请稍后再试”那一句。 */
+const gateNoteShown = computed(() => {
+  if (gateLockLeft.value > 0) {
+    const shown = lockNote(gateLockLeft.value, true);
+    return t(shown.text, shown.vars);
+  }
+  return t(gateNote.value);
+});
 const linkReady = ref(false);
 const qrOn = ref(false);
 const qrText = ref("");
@@ -786,7 +812,10 @@ function bridge() {
 }
 function send(text) {
   const api = bridge();
-  if (api) api.send(text);
+  if (!api) return;
+  /* 记下每个命令名最后发出去的那一条：桩回 "ACK <命令名> AUTH" 时知道该补发哪一条。 */
+  if (resendable(text)) lastSent[commandName(text)] = String(text);
+  api.send(text);
 }
 function startScan() {
   const api = bridge();
@@ -817,6 +846,8 @@ onMounted(() => {
 function connect(item) {
   scanning.value = false;
   linkAddr.value = item.addr || "";
+  resetGateSession();
+  stopGateLock();
   gateState.value = "need";
   gatePass.value = "";
   gateEnter.value = true;
@@ -875,6 +906,138 @@ function sendAuth(pass, enterAfter) {
   gateEnter.value = !!enterAfter;
   gateState.value = "checking";
   send("AUTH\t" + pass);
+}
+/* ---- 2.7.2：锁定倒计时、恢复后悄悄重新核对（auth.js） ---- */
+function stopGateLock() {
+  if (gateLockTimer) clearInterval(gateLockTimer);
+  gateLockTimer = 0;
+  gateLockUntil = 0;
+  gateLockLeft.value = 0;
+  gateLockKnown.value = false;
+  gateLockRetry = "";
+}
+function gateLockTick() {
+  gateLockLeft.value = gateLockKnown.value ? lockLeft(gateLockUntil, Date.now()) : 0;
+  if (Date.now() < gateLockUntil) return;
+  /* 到点了。锁定前没来得及核对的密码自动再试一次；没有就请用户重新输入。 */
+  const retry = gateLockRetry;
+  stopGateLock();
+  if (page.value !== "gate" || gateState.value === "ok") return;
+  if (pinOk(retry) && linkReady.value) {
+    gateNote.value = "锁定已解除，正在核对密码";
+    sendAuth(retry, true);
+  } else {
+    gateNote.value = "锁定已解除，请重新输入密码";
+  }
+}
+function startGateLock(seconds, retryPass) {
+  stopGateLock();
+  gateLockKnown.value = seconds !== null;
+  gateLockUntil = Date.now() + (seconds === null ? AUTH_LOCK_SECONDS : seconds) * 1000;
+  gateLockRetry = pinOk(retryPass) ? String(retryPass) : "";
+  gateLockLeft.value = gateLockKnown.value ? lockLeft(gateLockUntil, Date.now()) : 0;
+  gateLockTimer = setInterval(gateLockTick, 250);
+}
+function resetGateSession() {
+  /* 换了一条连接（或者断开了）：上一条连接上的重发次数、补发清单都不带过来。 */
+  gateReauth = false;
+  gateReauthTries = 0;
+  gateRefused = [];
+  Object.keys(lastSent).forEach((name) => { delete lastSent[name]; });
+}
+/* 一行是不是鉴权应答；是的话在这里办完，返回 true。放在 applyLine 最前面：
+ * "ACK TIMESET AUTH"、"ACK LTESET AUTH" 这些行后面各有各的解析，轮不到 applyAck。 */
+function applyAuthLine(line) {
+  const reply = parseAuthLine(line);
+  if (!reply) return false;
+  const step = authDecide(reply, {
+    state: gateState.value,
+    reauth: gateReauth,
+    pass: gatePass.value,
+    saved: savedGate(),
+    tries: gateReauthTries,
+  });
+  if (step.action === "enter") {
+    stopGateLock();
+    gateState.value = "ok";
+    gateAuto.value = false;
+    if (gateSave.value) rememberGate(gatePass.value);
+    else forgetGate();
+    gateInput.value = "";
+    gateEnter.value = false;
+    page.value = "charge";
+    send("SCHEDGET");
+    send("TELGET");
+    startTimeSync();
+    return true;
+  }
+  if (step.action === "resume") {
+    /* 悄悄重发的那一次通过了：界面留在原来的页，把被拒的命令补发。 */
+    const again = gateRefused;
+    gateRefused = [];
+    gateReauth = false;
+    stopGateLock();
+    gateState.value = "ok";
+    gateEnter.value = false;
+    if (note.value === "连接已恢复，正在重新核对密码") note.value = "状态已更新";
+    again.forEach((text) => send(text));
+    startTimeSync();
+    return true;
+  }
+  if (step.action === "reauth" || step.action === "wait") {
+    /* 桩说这条连接还没通过 AUTH：这条命令没有执行。记下来，通过后补发。 */
+    if (lastSent[step.cmd]) gateRefused = queueRefused(gateRefused, lastSent[step.cmd]);
+    if (step.action === "reauth") {
+      gateReauth = true;
+      gateReauthTries++;
+      if (page.value === "charge") note.value = "连接已恢复，正在重新核对密码";
+      sendAuth(step.pass, false);
+    }
+    /* 升级流程在等自己的应答：让它看到这一行，按发送失败处理。 */
+    if (isOtaCommand(step.cmd) && typeof otaWait === "function") otaWait(line);
+    return true;
+  }
+  if (step.action === "ask") {
+    gateReauth = false;
+    gateRefused = [];
+    gateState.value = "need";
+    gateAuto.value = false;
+    gateEnter.value = false;
+    if (page.value !== "gate") {
+      /* 已经在密码页上就不动：用户可能正输到一半。 */
+      gateInput.value = "";
+      page.value = "gate";
+      gateNote.value = "请输入充电桩屏幕上的 6 位管理员密码";
+    }
+    return true;
+  }
+  if (step.action === "wrong") {
+    gateReauth = false;
+    gateRefused = [];
+    stopGateLock();
+    gateState.value = "need";
+    gateAuto.value = false;
+    forgetGate();
+    gateEnter.value = false;
+    gateInput.value = "";
+    gateSave.value = true;
+    page.value = "gate";
+    gateNote.value = "密码不对。请输入屏幕上现在的管理员密码";
+    return true;
+  }
+  if (step.action === "locked") {
+    /* 已锁定：不是这个密码不对（锁着的时候输对了也是这一行），记住的密码不删。 */
+    gateReauth = false;
+    gateRefused = [];
+    gateState.value = "need";
+    gateAuto.value = false;
+    gateEnter.value = false;
+    page.value = "gate";
+    gateNote.value = "输错次数太多，已锁定。请稍后再试";
+    startGateLock(step.seconds, step.retry ? gatePass.value : "");
+    return true;
+  }
+  return false;
 }
 function trySavedGate() {
   const saved = savedGate();
@@ -950,10 +1113,12 @@ window.evcTryBack = function () {
 };
 function submitGate() {
   const pass = String(gateInput.value || "");
+  if (gateLockLeft.value > 0) return;         /* 锁着：等倒计时走完 */
   if (!/^\d{6}$/.test(pass)) {
     gateNote.value = "请输入 6 位数字";
     return;
   }
+  stopGateLock();                             /* 用户自己输了新的：不再自动重试旧的 */
   gatePass.value = pass;
   gateEnter.value = true;
   gateNote.value = "正在连接并核对";
@@ -2410,30 +2575,9 @@ function applyAck(line) {
     cfgNote.value = "没有保存。过压不超过 320 V，欠压不低于 100 V，且比过压至少低 10 V";
     return;
   }
-  if (line.indexOf("AUTH") >= 0 && line.indexOf("OK") >= 0) {
-    gateState.value = "ok";
-    gateAuto.value = false;
-    if (gateSave.value) rememberGate(gatePass.value);
-    else forgetGate();
-    gateInput.value = "";
-    gateEnter.value = false;
-    page.value = "charge";
-    send("SCHEDGET");
-    send("TELGET");
-    startTimeSync();
-    return;
-  }
-  if (line.indexOf("AUTH") >= 0) {
-    gateState.value = "need";
-    gateAuto.value = false;
-    forgetGate();
-    gateEnter.value = false;
-    gateInput.value = "";
-    gateSave.value = true;
-    page.value = "gate";
-    gateNote.value = "密码不对。请输入屏幕上现在的管理员密码";
-    return;
-  }
+  /* AUTH 的应答和 "ACK <命令名> AUTH" 不在这里：applyLine 一开头就交给 applyAuthLine()
+   * 了（2.7.2）。原来这里按“行里有 AUTH、没有 OK”认密码不对，把“已锁定”和“这条连接
+   * 还没通过鉴权”也当成了密码不对，还删掉记住的密码。 */
   if (line.indexOf("CARDSET") >= 0 && line.indexOf("OK") >= 0) {
     cards.value[cardIndex.value] = String(cardInput.value || "");
     cardNote.value = "已保存，断电后仍然有效";
@@ -2938,6 +3082,7 @@ async function confirmUpgrade() {
   otaNote.value = "文件已校验通过，充电桩正在升级并重启";
 }
 function applyLine(line) {
+  if (applyAuthLine(line)) return;
   if (typeof otaWait === "function" && otaWait(line)) return;
   /* 授时在等的行（开关状态）照常往下走，界面上的开关也跟着更新。 */
   if (typeof timeWait === "function") timeWait(line);
@@ -3183,7 +3328,10 @@ function handle(msg) {
     if (page.value === "scan") scanning.value = false;
     /* 新的一次连接：上一台桩的固件版本不能留着。心跳带不带时间按版本定（见 heartbeatTimed），
      * 这一台要是旧固件、状态行又不带版本，留着旧值就会对它发带时间的心跳，把连接弄断。 */
-    if (msg.s === "charge" && !linkReady.value) fw.value = "—";
+    if (msg.s === "charge" && !linkReady.value) {
+      fw.value = "—";
+      resetGateSession();
+    }
     if (msg.s === "charge") linkReady.value = true;
     if (msg.s === "charge" && gateState.value !== "ok") {
       const pass = /^\d{6}$/.test(gatePass.value) ? gatePass.value : savedGate();
@@ -3214,6 +3362,8 @@ function handle(msg) {
       stopWifiJoin("");
       linkReady.value = false;
       fw.value = "—";
+      resetGateSession();
+      stopGateLock();
       if (!gateAuto.value) {
         gateState.value = "unknown";
         gateEnter.value = false;

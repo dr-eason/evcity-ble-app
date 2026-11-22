@@ -4,6 +4,7 @@ import { ar } from "./packs-extra-2.js";
 import { bn, ur } from "./packs-extra-3.js";
 import { tzPacks } from "./packs-tz.js";
 import { ltePacks } from "./packs-lte.js";
+import { authPacks } from "./packs-auth.js";
 
 const en = {
   "返回": "Back",
@@ -597,6 +598,8 @@ const packs = { en, fr, ja, de, es, pt, ru, hi, ar, bn, id, ur };
 Object.keys(tzPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], tzPacks[lang]); });
 /* 2.6.16 的 4G 设置：新字符串都在 packs-lte.js。 */
 Object.keys(ltePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], ltePacks[lang]); });
+/* 2.7.2 的蓝牙鉴权（锁定提示、恢复后重新核对）：新字符串都在 packs-auth.js。 */
+Object.keys(authPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], authPacks[lang]); });
 
 export function translate(lang, text, vars) {
   const key = text == null ? "" : String(text);
