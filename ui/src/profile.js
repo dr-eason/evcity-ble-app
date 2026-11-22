@@ -128,10 +128,16 @@ function validSafety(s) {
   return true;
 }
 
+/* 平台地址：ws:// 或 wss://（2.7.1 的固件起，TLS 在模组里做，不校验服务器证书），
+ * 大小写都行；不能有空白；8 到 127 个字节。固件里是 wb2.c 的 ocpp_url_apply()。 */
+export function ocppUrlOk(url) {
+  const size = utf8len(url);
+  return /^wss?:\/\//i.test(url) && !/[\s]/.test(url) && size >= 8 && size <= 127;
+}
+
 function validOcpp(url) {
   if (!url) return true;
-  const size = utf8len(url);
-  return url.startsWith("ws://") && !/[\s]/.test(url) && size >= 8 && size <= 127;
+  return ocppUrlOk(url);
 }
 
 function validQr(text) {
@@ -452,7 +458,7 @@ function netCommand(body) {
 function ocppCommand(body) {
   if (!body.ocpp || typeof body.ocpp.on !== "boolean") return { error: "这份配置里没有这一项" };
   const url = String(body.ocpp.url || "");
-  if (!validOcpp(url)) return { error: "地址需要是 ws://主机/路径，最长 127 字节" };
+  if (!validOcpp(url)) return { error: "地址需要是 ws(s)://主机/路径，最长 127 字节" };
   const list = [];
   if (url) list.push(ackStep("OCPPSET\t" + url, "OCPPSET"));
   list.push(ackStep("OCPPSWSET\t" + (body.ocpp.on ? "1" : "0"), "OCPPSWSET"));

@@ -6,7 +6,7 @@
  * 一样的行首过滤。读取和下发走的是 App 真正用的 readPlan / writePlan / sameSection。 */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, hexToText, normalCards, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "../src/profile.js";
+import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, hexToText, normalCards, ocppUrlOk, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "../src/profile.js";
 
 /* MainActivity.knownLine。old = 2.5.4 安装包里的那张表（没有 PLUG、WPASS）。 */
 function knownLine(line, old) {
@@ -187,6 +187,29 @@ test("新 App + 2.6.0 固件：11 项全部读到，内容和桩里一致", () =
   assert.equal(body.imax, 16);
   assert.equal(body.safety.over, 260);
   assert.deepEqual(body.ocpp, { on: true, url: "ws://csms.example:8080/ocpp/EVC1" });
+});
+
+test("平台地址：ws:// 和 wss:// 都收，大小写都行；别的 scheme、空白、太短太长不收", () => {
+  for (const url of ["ws://abc", "ws://csms.example:8080/ocpp/EVC1", "wss://ab", "wss://csms.example/ocpp/EVC1",
+    "wss://csms.example:443/ocpp/EVC1", "wss://csms.example:8443/x", "WSS://csms.example/x", "Wss://h/x", "WS://ab/x"]) {
+    assert.equal(ocppUrlOk(url), true, url);
+  }
+  for (const url of ["", "ws://", "ws://h", "wss:/", "wss:/h/x", "wsss://h/x", "http://h/x", "https://h/x", "xwss://h/x",
+    "wss://h/a b", " wss://h/x", "wss://h/x\n", "wss://h/a\tb", "wss://" + "a".repeat(122)]) {
+    assert.equal(ocppUrlOk(url), false, JSON.stringify(url));
+  }
+  assert.equal(ocppUrlOk("wss://" + "a".repeat(121)), true);
+  /* 一键配置：wss:// 的地址读得回来，也下发得出去。 */
+  const pile = makePile("2.6.0");
+  configured(pile);
+  pile.st.url = "wss://csms.example/ocpp/EVC1";
+  const { body, failed } = backup(pile, false);
+  assert.deepEqual(failed, []);
+  assert.deepEqual(body.ocpp, { on: true, url: "wss://csms.example/ocpp/EVC1" });
+  const plan = writePlan("ocpp", { ocpp: { on: true, url: "WSS://csms.example:8443/ocpp/EVC1" } });
+  assert.equal(plan.error, undefined);
+  assert.equal(plan.list[0].command, "OCPPSET\tWSS://csms.example:8443/ocpp/EVC1");
+  assert.match(writePlan("ocpp", { ocpp: { on: true, url: "https://csms.example/x" } }).error, /ws\(s\):\/\//);
 });
 
 test("旧 App + 2.6.0 固件：应答是 ACK 开头，旧蓝牙层也放行", () => {

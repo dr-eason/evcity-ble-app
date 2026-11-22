@@ -382,7 +382,7 @@
         <input type="checkbox" :checked="ocppOn" @change="setOcppOn($event.target.checked)">
       </label>
       <p class="label">{{ t('OCPP 地址') }}</p>
-      <input v-model="ocppUrl" class="field" :placeholder="t('ws://主机/路径')">
+      <input v-model="ocppUrl" class="field" :placeholder="t('ws(s)://主机/路径')">
       <p class="note">{{ t(ocppNote) }}</p>
       <button class="go" @click="saveOcpp">{{ t('保存') }}</button>
     </section>
@@ -587,7 +587,7 @@ import { LTE_PROTOS, apnCommand, apnError, lteCellText, lteExclusive, lteHomeTex
 import { TZ_ZONES, parseSchedLine, parseTzAck, saveZone, tzIndex, tzLabel, tzSupported } from "./tz.js";
 import { CLOCK_RESYNC_MS, CLOCK_RETRY_MS, chargerClock, parseTimeGet, readChargerTime, timeGetSupported } from "./charger-clock.js";
 import { heartbeatCarriesTime, parseTimeAck, phoneTzMinutes, runTimeSync, zoneRereadDue } from "./time-sync.js";
-import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "./profile.js";
+import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, ocppUrlOk, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "./profile.js";
 
 const langIds = languages.map((item) => item.id);
 function savedLang() {
@@ -2024,9 +2024,8 @@ function setOcppOn(on) {
 }
 function saveOcpp() {
   const url = ocppUrl.value.trim();
-  const size = new TextEncoder().encode(url).length;
-  if (!url.startsWith("ws://") || /[\s\n]/.test(url) || size < 8 || size > 127) {
-    ocppNote.value = "地址需要是 ws://主机/路径，最长 127 字节";
+  if (!ocppUrlOk(url)) {
+    ocppNote.value = "地址需要是 ws(s)://主机/路径，最长 127 字节";
     return;
   }
   ocppNote.value = "正在保存";
@@ -3151,11 +3150,11 @@ function applyLine(line) {
   }
   if (line.indexOf("OCPP ") === 0) {
     const url = line.slice(5).trim();
-    if (url !== "-" && !/^wss?:\/\/\S+$/.test(url)) return;
+    if (url !== "-" && !/^wss?:\/\/\S+$/i.test(url)) return;
     ocppUrl.value = url === "-" ? "" : url;
     ocppNote.value = ocppUrl.value
       ? "这是充电桩里保存的地址，改完点保存"
-      : "还没有地址。填好 ws:// 地址并保存后才会连接";
+      : "还没有地址。填好 ws(s):// 地址并保存后才会连接";
     return;
   }
   if (line.indexOf("CFG ") === 0) {
