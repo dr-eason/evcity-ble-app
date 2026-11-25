@@ -75,6 +75,11 @@
     mtu: function () { return mockLink ? mockLink.mtu() : mtu; },
     linkFast: function (on) { ble("linkFast", [!!on]); },
     heartbeatTime: function (on) { ble("heartbeatTime", [!!on]); },
+    /* 一键配置导出（2.8.0）：原生写临时文件，再打开「文件」App 的导出窗口；结果用 onBle({t:"export"}) 回来。
+     * 不走 Mock：模拟器上也是真的存文件。 */
+    exportFile: function (name, text) {
+      post("exportFile", [name == null ? "" : String(name), text == null ? "" : String(text)]);
+    },
     restart: function () {
       if (mockLink) {
         try { mockLink.call("shutdown", []); } catch (e) {}

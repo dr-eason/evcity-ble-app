@@ -7,6 +7,8 @@ import { ltePacks } from "./packs-lte.js";
 import { authPacks } from "./packs-auth.js";
 import { scrLangPacks } from "./packs-scrlang.js";
 import { scrThemePacks } from "./packs-scrtheme.js";
+import { layoutPacks } from "./packs-layout.js";
+import { phasePacks } from "./packs-phase.js";
 
 const en = {
   "返回": "Back",
@@ -841,6 +843,10 @@ Object.keys(tabPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[l
 Object.keys(scrLangPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], scrLangPacks[lang]); });
 /* 屏幕颜色设置（SCRTHEMEGET / SCRTHEMESET）：新字符串都在 packs-scrtheme.js。 */
 Object.keys(scrThemePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], scrThemePacks[lang]); });
+/* 3.0.0 固件分区布局（L1 老分区 / L2 新板）：新字符串都在 packs-layout.js。 */
+Object.keys(layoutPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], layoutPacks[lang]); });
+/* 相位设置（PHASEGET / PHASESET）和一键配置新增的提示（跳过、导出导入、4G 开关）：packs-phase.js。 */
+Object.keys(phasePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], phasePacks[lang]); });
 
 export function translate(lang, text, vars) {
   const key = text == null ? "" : String(text);

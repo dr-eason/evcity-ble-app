@@ -6,7 +6,14 @@
  * 一样的行首过滤。读取和下发走的是 App 真正用的 readPlan / writePlan / sameSection。 */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, hexToText, normalCards, ocppUrlOk, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "../src/profile.js";
+import { readFileSync } from "node:fs";
+import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, hexToText, normalCards, ocppUrlOk, quietSkip, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "../src/profile.js";
+import {
+  EXPORT_KIND, IMPORT_MAX_BYTES, PROFILE_FORMAT, PROFILE_MODEL, bodyProblem, exportFileName, exportText, hasSection, importText,
+  makeProfile, phaseReason, profileFormat, storedProfileOk,
+} from "../src/profile.js";
+import { PHASE_BUSY_REASON } from "../src/phase.js";
+import { languages, translate } from "../src/i18n.js";
 
 /* MainActivity.knownLine。old = 2.5.4 安装包里的那张表（没有 PLUG、WPASS）。 */
 function knownLine(line, old) {
@@ -25,8 +32,21 @@ function toHex(text) {
 /* 假桩。fw = "2.6.0" 或 "2.5.6"：PLUGGET 和 WPASSGET 的应答格式不同；没存过保护设置时
  * 过压、欠压 2.6.0 回 253 / 207，2.5.6 回 250 / 190。 */
 /* slots：本地 IC 卡格数。2.6.3 及更早 5 格（默认），2.6.4 起 10 格。 */
-function makePile(fw, slots = 5) {
+/* 2.8.0：fw 可以是 "2.6.16"（有 4G）、"2.8.0"（还有屏幕语言、屏幕颜色）。noScr：版本号已经是
+ * 2.8.0、但还没有屏幕语言和颜色命令的开发版固件（对这两组一声不吭）。相位所有版本都有。 */
+function fwAtLeast(fw, need) {
+  const have = String(fw).split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((have[i] || 0) !== need[i]) return (have[i] || 0) > need[i];
+  }
+  return true;
+}
+
+function makePile(fw, slots = 5, extra) {
+  const lte = fwAtLeast(fw, [2, 6, 16]);
+  const scr = fwAtLeast(fw, [2, 8, 0]) && !(extra && extra.noScr);
   const st = {
+    phase: 0, charging: false, lteOn: false, apn: { proto: 0, apn: "", user: "", pass: "" }, scrLang: 0, scrTheme: 2,
     over: fw === "2.6.0" ? 253 : 250, under: fw === "2.6.0" ? 207 : 190, cp: [10.5, 7.5, 4.5, -6], earth: false, leak: false, earthMin: 150,
     imax: 32, plug: false, cards: Array(slots).fill(""),
     sched: { tz: 480, mode: 0, hour: 8, minute: 0 }, qr: { on: false, text: "" },
@@ -103,8 +123,51 @@ function makePile(fw, slots = 5) {
       case "OCPPSWSET": st.ocppOn = arg === "1"; return ["ACK OCPPSWSET OK"];
       case "OCPPGET": return ["OCPP " + (st.url || "-")];
       case "OCPPSET": st.url = arg; return ["ACK OCPPSET OK"];
-      default: return [];
+      /* 相位：wb2.c。充电中改成另一个值回 BUSY，值没变回 OK。 */
+      case "PHASEGET": return ["PHASE " + st.phase];
+      case "PHASESET": {
+        if (arg !== "0" && arg !== "1") return ["ACK PHASESET FAIL"];
+        if (Number(arg) !== st.phase && st.charging) return ["ACK PHASESET BUSY"];
+        st.phase = Number(arg);
+        return ["ACK PHASESET OK"];
+      }
+      default: break;
     }
+    if (lte) {
+      switch (name) {
+        case "LTEGET": return ["ACK LTE " + (st.lteOn ? 1 : 0)];
+        case "LTESET":
+          if (arg !== "0" && arg !== "1") return ["ACK LTESET FAIL"];
+          st.lteOn = arg === "1";
+          /* lte_cfg_exclusive：开 4G 关 WiFi 和遥测；两条链路都关了，OCPP 跟着关。 */
+          if (st.lteOn) { st.wifiOn = false; st.tel = false; }
+          else if (!st.wifiOn) st.ocppOn = false;
+          return ["ACK LTESET OK"];
+        case "APNGET": return ["ACK APN " + st.apn.proto + "\t" + st.apn.apn + "\t" + st.apn.user + "\t" + st.apn.pass];
+        case "APNSET": {
+          const part = arg.split("\t");
+          st.apn = { proto: Number(part[0]), apn: part[1] || "", user: part[2] || "", pass: part[3] || "" };
+          return ["ACK APNSET OK"];
+        }
+        default: break;
+      }
+    }
+    if (scr) {
+      switch (name) {
+        case "SCRLANGGET": return ["ACK SCRLANG " + st.scrLang];
+        case "SCRLANGSET":
+          if (!/^[0-4]$/.test(arg)) return ["ACK SCRLANGSET FAIL"];
+          st.scrLang = Number(arg);
+          return ["ACK SCRLANGSET OK"];
+        case "SCRTHEMEGET": return ["ACK SCRTHEME " + st.scrTheme];
+        case "SCRTHEMESET":
+          if (!/^[0-6]$/.test(arg)) return ["ACK SCRTHEMESET FAIL"];
+          st.scrTheme = Number(arg);
+          return ["ACK SCRTHEMESET OK"];
+        default: break;
+      }
+    }
+    return [];
   }
   return { st, answer, slots, fw };
 }
@@ -117,36 +180,47 @@ function ask(pile, step, oldApp) {
   return lines.find((line) => step.accept(line)) || null;
 }
 
-/* runProfileJob 的读取。返回 { body, failed: [没读到的项] }。 */
+/* runProfileJob 的读取。返回 { body, failed: [没读到的项], skipped: [跳过的项] }。 */
 function backup(pile, oldApp) {
   const body = blankBody();
   const failed = [];
+  const skipped = [];
   for (const section of SECTIONS) {
-    /* App 的 runProfileJob：桩的固件不认识的项（4G APN，2.6.16 起）跳过，不算没读到。 */
-    if (sectionSkip(section, "read", pile.fw, body)) continue;
+    /* App 的 runProfileJob：桩的固件不认识的项（4G 2.6.16 起、屏幕语言和颜色 2.8.0 起）跳过，不算没读到。 */
+    if (sectionSkip(section, "read", pile.fw, body)) { skipped.push(section.key); continue; }
     const plan = readPlan(section.key);
     let ok = !!plan.list;
+    let quiet = false;
     for (const step of plan.list || []) {
       const line = ask(pile, step, oldApp);
+      if (!line && quietSkip(section, line)) { quiet = true; break; }
       if (!line || !step.ok(line, body)) { ok = false; break; }
     }
-    if (!ok) failed.push(section.key);
+    if (quiet) skipped.push(section.key);
+    else if (!ok) failed.push(section.key);
   }
-  return { body, failed };
+  return { body, failed, skipped };
 }
 
-/* runProfileJob 的下发：每项写完读回来比。 */
+/* runProfileJob 的下发：每项写完读回来比。返回没写上的项；failed.reasons 是各项的原因，
+ * failed.skipped 是跳过的项。 */
 function restore(pile, body, opts) {
   const failed = [];
+  /* 不可枚举：老用例拿返回值和 [] 做 deepEqual。 */
+  Object.defineProperty(failed, "reasons", { value: {}, enumerable: false });
+  Object.defineProperty(failed, "skipped", { value: [], enumerable: false });
   for (const section of SECTIONS) {
-    if (sectionSkip(section, "write", pile.fw, body)) continue;
+    if (sectionSkip(section, "write", pile.fw, body, opts)) { failed.skipped.push(section.key); continue; }
     /* App 按桩上报的固件版本给 cardSlots；这里直接用假桩的格数。 */
-    const plan = writePlan(section.key, body, opts || { cardSlots: pile.slots });
+    const plan = writePlan(section.key, body, Object.assign({ cardSlots: pile.slots }, opts || {}));
     let ok = !!plan.list;
+    let quiet = false;
     for (const step of plan.list || []) {
       const line = ask(pile, step, false);
-      if (!line || !step.ok(line, body)) { ok = false; break; }
+      if (!line && quietSkip(section, line)) { quiet = true; break; }
+      if (!line || !step.ok(line, body)) { ok = false; failed.reasons[section.key] = step.reason(line); break; }
     }
+    if (quiet) { failed.skipped.push(section.key); continue; }
     if (ok) {
       const got = blankBody();
       for (const step of readPlan(section.key).list) {
@@ -456,4 +530,357 @@ test("旧固件的桩备份出来也是 10 格（后 5 格空），和以前的 
   assert.equal(body.cards.length, CARD_SLOTS);
   assert.ok(sameSection("cards", { cards: ["A1", "", "C3", "", ""] }, body));
   assert.ok(!sameSection("cards", { cards: ["A1", "", "C3", "", "E5"] }, body));
+});
+
+
+/* ---------------- 2.8.0：屏幕语言、屏幕颜色、相位、4G 开关，格式版本，导出导入 ---------------- */
+
+/* 2.8.0 的桩，五样新东西都设成和出厂不一样的值。 */
+function configured28(pile) {
+  configured(pile);
+  Object.assign(pile.st, {
+    phase: 1, scrLang: 4, scrTheme: 5, lteOn: false, apn: { proto: 2, apn: "private.apn", user: "bob", pass: "s3cret" },
+  });
+}
+
+/* 2.8.0 之前的 App 存的记录：没有 format，body 只有前 11 组（加 apn）。 */
+function oldRecord(body) {
+  const old = JSON.parse(JSON.stringify(body));
+  delete old.lte;
+  delete old.scrLang;
+  delete old.scrTheme;
+  delete old.phase;
+  return { id: "old1", name: "门店标准", savedAt: 1760000000000, model: "AC06", body: old };
+}
+
+test("新的几组：屏幕语言、屏幕颜色、相位在最后；since 和跳过规则", () => {
+  const keys = SECTIONS.map((item) => item.key);
+  assert.deepEqual(keys.slice(-3), ["scrlang", "scrtheme", "phase"]);
+  const find = (key) => SECTIONS.find((item) => item.key === key);
+  assert.deepEqual(find("scrlang").since, [2, 8, 0]);
+  assert.deepEqual(find("scrtheme").since, [2, 8, 0]);
+  assert.equal(find("phase").since, undefined);
+  for (const key of ["scrlang", "scrtheme", "phase", "lte", "apn"]) assert.equal(find(key).optional, true, key);
+  /* 屏幕语言、颜色：旧固件（或版本读不出）跳过；相位哪个版本都读。 */
+  for (const fw of ["2.7.2", "2.6.16", "", "—"]) {
+    assert.equal(sectionSkip(find("scrlang"), "read", fw, blankBody()), "固件不支持", fw);
+    assert.equal(sectionSkip(find("scrtheme"), "read", fw, blankBody()), "固件不支持", fw);
+    assert.equal(sectionSkip(find("phase"), "read", fw, blankBody()), "", fw);
+  }
+  assert.equal(sectionSkip(find("scrlang"), "read", "2.8.0", blankBody()), "");
+  assert.equal(sectionSkip(find("scrtheme"), "read", "V3.0.0", blankBody()), "");
+  /* 下发：备份里没有就跳过，不算失败。 */
+  for (const key of ["scrlang", "scrtheme", "phase"]) {
+    assert.equal(sectionSkip(find(key), "write", "2.8.0", blankBody()), "这份配置里没有这一项", key);
+    assert.equal(sectionSkip(find(key), "write", "2.8.0", oldRecord(blankBody()).body), "这份配置里没有这一项", key);
+  }
+  assert.equal(sectionSkip(find("phase"), "write", "2.5.6", { phase: 0 }), "");
+  assert.equal(sectionSkip(find("scrtheme"), "write", "2.8.0", { scrTheme: 0 }), "");
+  /* 屏幕语言、颜色桩不回：按不支持跳过；相位桩不回：照常算失败。 */
+  assert.equal(quietSkip(find("scrlang"), null), "充电桩没有应答，固件可能还不支持这一项");
+  assert.equal(quietSkip(find("scrtheme"), null), "充电桩没有应答，固件可能还不支持这一项");
+  assert.equal(quietSkip(find("scrlang"), "ACK SCRLANG 1"), "");
+  assert.equal(quietSkip(find("phase"), null), "");
+  assert.equal(quietSkip(find("imax"), null), "");
+});
+
+test("新三组的 readPlan / writePlan / sameSection", () => {
+  const body = blankBody();
+  const read = (key, line) => {
+    const step = readPlan(key).list[0];
+    return step.accept(line) && step.ok(line, body);
+  };
+  assert.equal(readPlan("scrlang").list[0].command, "SCRLANGGET");
+  assert.equal(readPlan("scrtheme").list[0].command, "SCRTHEMEGET");
+  assert.equal(readPlan("phase").list[0].command, "PHASEGET");
+  assert.ok(read("scrlang", "ACK SCRLANG 3"));
+  assert.ok(read("scrtheme", "ACK SCRTHEME 6"));
+  assert.ok(read("phase", "PHASE 1"));
+  assert.deepEqual([body.scrLang, body.scrTheme, body.phase], [3, 6, 1]);
+  /* 不认的值、别的行：不收。 */
+  assert.equal(read("scrlang", "ACK SCRLANG 7"), false);
+  assert.equal(read("scrtheme", "ACK SCRTHEME 9"), false);
+  assert.equal(read("phase", "PHASE 2"), false);
+  assert.equal(readPlan("phase").list[0].accept("ACK PHASESET OK"), false);
+  assert.equal(readPlan("scrlang").list[0].accept("ACK SCRLANGSET OK"), false);
+  assert.equal(readPlan("scrtheme").list[0].accept("ACK SCRLANG 1"), false);
+  /* 下发的命令。 */
+  assert.equal(writePlan("scrlang", { scrLang: 4 }).list[0].command, "SCRLANGSET\t4");
+  assert.equal(writePlan("scrtheme", { scrTheme: 0 }).list[0].command, "SCRTHEMESET\t0");
+  assert.equal(writePlan("phase", { phase: 1 }).list[0].command, "PHASESET\t1");
+  assert.equal(writePlan("phase", { phase: 0 }).list[0].command, "PHASESET\t0");
+  for (const [key, bad] of [["scrlang", { scrLang: 5 }], ["scrlang", { scrLang: "1" }], ["scrtheme", { scrTheme: 7 }],
+    ["scrtheme", { scrTheme: null }], ["phase", { phase: 2 }], ["phase", { phase: true }], ["phase", {}]]) {
+    assert.ok(writePlan(key, bad).error, key + " " + JSON.stringify(bad));
+  }
+  const ok = (key, line) => writePlan(key, { scrLang: 1, scrTheme: 1, phase: 1 }).list[0].ok(line);
+  assert.equal(ok("scrlang", "ACK SCRLANGSET OK"), true);
+  assert.equal(ok("scrlang", "ACK SCRLANGSET FAIL"), false);
+  assert.equal(ok("scrtheme", "ACK SCRTHEMESET OK"), true);
+  assert.equal(ok("phase", "ACK PHASESET OK"), true);
+  assert.equal(ok("phase", "ACK PHASESET BUSY"), false);
+  /* 读回核对。 */
+  assert.equal(sameSection("scrlang", { scrLang: 2 }, { scrLang: 2 }), true);
+  assert.equal(sameSection("scrlang", { scrLang: 2 }, { scrLang: 3 }), false);
+  assert.equal(sameSection("scrtheme", { scrTheme: 0 }, { scrTheme: 0 }), true);
+  assert.equal(sameSection("scrtheme", { scrTheme: null }, { scrTheme: null }), false);
+  assert.equal(sameSection("phase", { phase: 1 }, { phase: 1 }), true);
+  assert.equal(sameSection("phase", { phase: 1 }, { phase: 0 }), false);
+  assert.equal(sameSection("lte", { lte: true }, { lte: true }), true);
+  assert.equal(sameSection("lte", { lte: true }, { lte: false }), false);
+});
+
+test("2.8.0 的桩：16 组都读到（4G 开关也读），还原到另一台 2.8.0 的桩，读回一致", () => {
+  const source = makePile("2.8.0", 10);
+  configured28(source);
+  const { body, failed, skipped } = backup(source, false);
+  assert.deepEqual(failed, []);
+  assert.deepEqual(skipped, []);
+  assert.equal(body.scrLang, 4);
+  assert.equal(body.scrTheme, 5);
+  assert.equal(body.phase, 1);
+  assert.equal(body.lte, false);
+  assert.deepEqual(body.apn, { proto: 2, apn: "private.apn", user: "bob", pass: "s3cret" });
+  const target = makePile("2.8.0", 10);
+  const result = restore(target, JSON.parse(JSON.stringify(body)));
+  assert.deepEqual(result, []);
+  /* 没勾 4G 开关：跳过，其余都写了。 */
+  assert.deepEqual(result.skipped, ["lte"]);
+  assert.deepEqual([target.st.scrLang, target.st.scrTheme, target.st.phase], [4, 5, 1]);
+  assert.deepEqual(backup(target, false).body, body);
+});
+
+test("旧备份（没有屏幕语言、颜色、相位、4G 开关）还原到 2.8.0 的桩：这几组跳过，不算失败，桩上原值不动", () => {
+  const source = makePile("2.6.16", 10);
+  configured(source);
+  const saved = oldRecord(backup(source, false).body);
+  const target = makePile("2.8.0", 10);
+  Object.assign(target.st, { scrLang: 3, scrTheme: 0, phase: 1 });
+  const result = restore(target, JSON.parse(JSON.stringify(saved.body)), { withLte: true });
+  assert.deepEqual(result, []);
+  assert.deepEqual(result.skipped, ["lte", "scrlang", "scrtheme", "phase"]);
+  assert.deepEqual([target.st.scrLang, target.st.scrTheme, target.st.phase], [3, 0, 1]);
+  /* 原来的几组照样写上了。 */
+  assert.equal(target.st.imax, 16);
+  assert.deepEqual(target.st.apn, source.st.apn);
+});
+
+test("2.8.0 的备份还原到旧固件：屏幕语言、颜色、4G 跳过（固件不支持），相位照写", () => {
+  const source = makePile("2.8.0", 10);
+  configured28(source);
+  const saved = backup(source, false).body;
+  const target = makePile("2.6.0", 10);
+  const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: true });
+  assert.deepEqual(result, []);
+  assert.deepEqual(result.skipped, ["lte", "apn", "scrlang", "scrtheme"]);
+  assert.equal(target.st.phase, 1);
+  /* 旧固件的桩备份出来：这几组是 null，整份照样保存。 */
+  const back = backup(makePile("2.6.0"), false);
+  assert.deepEqual(back.failed, []);
+  assert.deepEqual([back.body.scrLang, back.body.scrTheme, back.body.lte, back.body.phase], [null, null, null, 0]);
+});
+
+test("版本号是 2.8.0、但还没有屏幕语言和颜色命令的固件：读、写都按不支持跳过，整份照样保存", () => {
+  const pile = makePile("2.8.0", 10, { noScr: true });
+  configured28(pile);
+  const { body, failed, skipped } = backup(pile, false);
+  assert.deepEqual(failed, []);
+  assert.deepEqual(skipped, ["scrlang", "scrtheme"]);
+  assert.equal(body.scrLang, null);
+  assert.equal(body.phase, 1);
+  const full = makePile("2.8.0", 10);
+  configured28(full);
+  const result = restore(makePile("2.8.0", 10, { noScr: true }), backup(full, false).body);
+  assert.deepEqual(result, []);
+  assert.deepEqual(result.skipped, ["lte", "scrlang", "scrtheme"]);
+});
+
+test("相位：充电中改成另一个值桩回 BUSY，这一组失败并提示先停充电；其余组照写，不回滚", () => {
+  const source = makePile("2.8.0", 10);
+  configured28(source);
+  const saved = backup(source, false).body;
+  const target = makePile("2.8.0", 10);
+  target.st.charging = true;
+  target.st.phase = 0;
+  const result = restore(target, JSON.parse(JSON.stringify(saved)));
+  assert.deepEqual(result, ["phase"]);
+  assert.equal(result.reasons.phase, PHASE_BUSY_REASON);
+  assert.equal(PHASE_BUSY_REASON, "充电桩正在充电，请先停止充电后再下发相位");
+  assert.equal(target.st.phase, 0);
+  /* 前面各组已经写上了，没有回滚。 */
+  assert.equal(target.st.imax, 16);
+  assert.equal(target.st.scrTheme, 5);
+  /* 值没变：充电中也回 OK，这一组成功。 */
+  const same = makePile("2.8.0", 10);
+  same.st.charging = true;
+  same.st.phase = 1;
+  assert.deepEqual(restore(same, JSON.parse(JSON.stringify(saved))), []);
+  /* 原因函数本身。 */
+  assert.equal(phaseReason("ACK PHASESET BUSY"), PHASE_BUSY_REASON);
+  assert.equal(phaseReason("ACK PHASESET FAIL"), "充电桩没有接受");
+  assert.equal(phaseReason(null), "回复超时");
+  assert.equal(writePlan("phase", { phase: 1 }).list[0].reason("ACK PHASESET BUSY"), PHASE_BUSY_REASON);
+});
+
+test("4G 开关：勾了才下发；下发在 OCPP 前面，用 4G 联网的备份还原后 OCPP 开关读回一致", () => {
+  const source = makePile("2.8.0", 10);
+  configured28(source);
+  Object.assign(source.st, { lteOn: true, wifiOn: false, tel: false, ocppOn: true });
+  const saved = backup(source, false).body;
+  assert.equal(saved.lte, true);
+  assert.equal(hasSection("lte", saved), true);
+  /* 目标桩现在用 WiFi。 */
+  const target = makePile("2.8.0", 10);
+  Object.assign(target.st, { wifiOn: true, lteOn: false });
+  const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: true });
+  assert.deepEqual(result, []);
+  assert.deepEqual(result.skipped, []);
+  assert.deepEqual([target.st.lteOn, target.st.wifiOn, target.st.ocppOn], [true, false, true]);
+  /* 不勾：4G 开关不动。 */
+  const keep = makePile("2.8.0", 10);
+  Object.assign(keep.st, { wifiOn: false, lteOn: true });
+  const plain = restore(keep, JSON.parse(JSON.stringify(Object.assign({}, saved, { lte: false }))));
+  assert.ok(plain.skipped.includes("lte"));
+  assert.equal(keep.st.lteOn, true);
+});
+
+test("格式版本：新记录带 format 2；没有 format 的旧记录照样能列出、能下发", () => {
+  assert.equal(PROFILE_FORMAT, 2);
+  assert.equal(PROFILE_MODEL, "AC06");
+  const rec = makeProfile("门店", blankBody(), 123, "id1");
+  assert.deepEqual(Object.keys(rec).sort(), ["body", "format", "id", "model", "name", "savedAt"]);
+  assert.equal(rec.format, 2);
+  assert.equal(profileFormat(rec), 2);
+  const old = oldRecord(blankBody());
+  assert.equal(profileFormat(old), 1);
+  assert.equal(storedProfileOk(old), true);
+  assert.equal(storedProfileOk(rec), true);
+  assert.equal(storedProfileOk(Object.assign({}, rec, { model: "AC05" })), false);
+  assert.equal(storedProfileOk(Object.assign({}, rec, { body: null })), false);
+  assert.equal(profileFormat({ format: "x" }), 0);
+  /* App.vue 用的就是这些：存新记录用 makeProfile，列表用 storedProfileOk。 */
+  const vue = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
+  assert.match(vue, /list\.unshift\(makeProfile\(name, body, Date\.now\(\), newProfileId\(\)\)\);/);
+  assert.match(vue, /return raw\.filter\(storedProfileOk\);/);
+});
+
+test("导出 / 导入：往返一致，id 重新取，同一份不重复导入", () => {
+  const pile = makePile("2.8.0", 10);
+  configured28(pile);
+  const body = backup(pile, false).body;
+  const oldPile = makePile("2.6.3");
+  configured(oldPile);
+  /* 2.6.3 的 App 存的：5 格卡、没有 apn、没有 format。 */
+  const legacy = oldRecord(backup(oldPile, false).body);
+  legacy.body.cards = legacy.body.cards.slice(0, 5);
+  delete legacy.body.apn;
+  const list = [makeProfile("门店 A", body, 1761000000000, "a1"), legacy];
+  const text = exportText(list, 1762000000000);
+  const data = JSON.parse(text);
+  assert.equal(data.kind, EXPORT_KIND);
+  assert.equal(data.format, PROFILE_FORMAT);
+  assert.equal(data.exportedAt, 1762000000000);
+  assert.equal(data.profiles.length, 2);
+  assert.equal(data.profiles[1].format, 1);
+  let next = 0;
+  const newId = () => "n" + (++next);
+  const got = importText(text, [], newId);
+  assert.equal(got.error, undefined);
+  assert.equal(got.list.length, 2);
+  assert.deepEqual(got.list.map((item) => item.id), ["n1", "n2"]);
+  assert.deepEqual(got.list[0].body, body);
+  assert.equal(got.list[0].name, "门店 A");
+  assert.equal(got.list[0].savedAt, 1761000000000);
+  assert.equal(got.list[0].model, "AC06");
+  /* 旧记录的卡表补成 10 格，格式还是 1。 */
+  assert.equal(got.list[1].body.cards.length, 10);
+  assert.equal(got.list[1].format, 1);
+  for (const item of got.list) assert.ok(storedProfileOk(item));
+  /* 再导一次：都已经在列表里。 */
+  const again = importText(text, got.list, newId);
+  assert.deepEqual(again.list, []);
+  assert.equal(again.same, 2);
+  /* id 撞了就换一个。 */
+  const clash = importText(text, [{ id: "n3", name: "x", body: {}, model: "AC06" }], () => (next < 4 ? "n" + (++next) : "z" + (++next)));
+  assert.ok(clash.list.every((item) => item.id !== "n3"));
+  /* 也认单独一条记录、记录数组，带 BOM 也行。 */
+  assert.equal(importText(JSON.stringify(list[0]), [], newId).list.length, 1);
+  assert.equal(importText(JSON.stringify(list), [], newId).list.length, 2);
+  assert.equal(importText("﻿" + text, [], newId).list.length, 2);
+  /* 导出后还原到桩上照样能用。 */
+  const target = makePile("2.8.0", 10);
+  assert.deepEqual(restore(target, got.list[0].body), []);
+  assert.deepEqual([target.st.scrLang, target.st.scrTheme, target.st.phase], [4, 5, 1]);
+  /* 文件名。 */
+  assert.match(exportFileName(Date.now()), /^evcity-ac06-oneclick-\d{8}-\d{4}\.json$/);
+  assert.equal(exportFileName(NaN), "evcity-ac06-oneclick.json");
+});
+
+test("导入：坏文件整份不进，说清楚原因", () => {
+  const good = makeProfile("门店", JSON.parse(JSON.stringify(backup((() => { const p = makePile("2.8.0", 10); configured28(p); return p; })(), false).body)), 1, "g");
+  const wrap = (profiles, extra) => JSON.stringify(Object.assign({ kind: EXPORT_KIND, format: 2, exportedAt: 1, profiles }, extra || {}));
+  const bad = (mutate) => {
+    const item = JSON.parse(JSON.stringify(good));
+    mutate(item);
+    return importText(wrap([good, item]), [], () => "x" + Math.random());
+  };
+  const newId = () => "id";
+  assert.equal(importText("not json", [], newId).error, "这个文件不是一键配置文件");
+  assert.equal(importText("42", [], newId).error, "这个文件不是一键配置文件");
+  assert.equal(importText(JSON.stringify({ hello: 1 }), [], newId).error, "这个文件不是一键配置文件");
+  assert.equal(importText(wrap([good], { kind: "other" }), [], newId).error, "这个文件不是一键配置文件");
+  assert.equal(importText(wrap([]), [], newId).error, "文件里没有配置");
+  assert.equal(importText(wrap([good], { format: 3 }), [], newId).error, "这个文件是更新版本的 App 导出的，请先升级 App");
+  assert.equal(importText("x".repeat(IMPORT_MAX_BYTES + 1), [], newId).error, "文件太大，不是一键配置文件");
+  assert.equal(bad((item) => { item.format = 9; }).error, "这个文件是更新版本的 App 导出的，请先升级 App");
+  assert.deepEqual(bad((item) => { item.model = "AC05"; }), { error: "第 {n} 份配置不是 AC06 充电桩的", vars: { n: 2 } });
+  assert.deepEqual(bad((item) => { item.name = ""; }), { error: "第 {n} 份配置的名称不能用", vars: { n: 2 } });
+  assert.deepEqual(bad((item) => { item.name = "x".repeat(33); }), { error: "第 {n} 份配置的名称不能用", vars: { n: 2 } });
+  const field = (mutate) => bad(mutate).vars && bad(mutate).vars.name;
+  assert.equal(field((item) => { item.body.cards = Array(11).fill(""); }), "本地IC卡");
+  assert.equal(field((item) => { item.body.cards[0] = "TOO-LONG-CARD"; }), "本地IC卡");
+  assert.equal(field((item) => { item.body.imax = 40; }), "最大电流");
+  assert.equal(field((item) => { item.body.safety.over = 400; }), "安全管理参数");
+  assert.equal(field((item) => { delete item.body.sched; }), "预约充电");
+  assert.equal(field((item) => { item.body.wifi.pass = "a\tb"; }), "网络设置");
+  assert.equal(field((item) => { item.body.ocpp.url = "http://x/y"; }), "OCPP设置");
+  assert.equal(field((item) => { item.body.scrTheme = 7; }), "屏幕颜色");
+  assert.equal(field((item) => { item.body.scrLang = "1"; }), "屏幕语言");
+  assert.equal(field((item) => { item.body.phase = 3; }), "相位");
+  assert.equal(field((item) => { item.body.lte = 1; }), "4G 开关");
+  assert.equal(field((item) => { item.body.apn = { proto: 5 }; }), "4G APN");
+  assert.equal(bad((item) => { item.body.scrTheme = 7; }).error, "第 {n} 份配置里的「{name}」不能用，整个文件没有导入");
+  assert.deepEqual(bad((item) => { item.body = "x"; }).vars, { n: 2, name: "配置内容" });
+  assert.deepEqual(importText(JSON.stringify([null]), [], newId), { error: "第 {n} 份配置不能用", vars: { n: 1 } });
+  /* 新加的几组可以没有（旧备份），也可以是 null（桩不支持）。 */
+  assert.equal(bodyProblem(oldRecord(good.body).body), "");
+  assert.equal(bodyProblem(Object.assign({}, good.body, { scrLang: null, scrTheme: null, phase: null, lte: null, apn: null })), "");
+  /* 空白模板不是一份真配置（保护参数全是 0）。 */
+  assert.equal(bodyProblem(blankBody()), "安全管理参数");
+});
+
+test("新提示 12 种语言都有：跳过原因、相位 BUSY、导出导入、4G 开关、新的组名", () => {
+  const keys = ["相位", "4G 开关", "屏幕语言", "屏幕颜色", "没有勾选，不下发", "充电桩没有应答，固件可能还不支持这一项",
+    PHASE_BUSY_REASON, "这个文件不是一键配置文件", "文件太大，不是一键配置文件", "文件里没有配置",
+    "这个文件是更新版本的 App 导出的，请先升级 App", "第 {n} 份配置不能用", "第 {n} 份配置不是 AC06 充电桩的",
+    "第 {n} 份配置的名称不能用", "第 {n} 份配置里的「{name}」不能用，整个文件没有导入", "配置内容"];
+  const vue = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
+  const block = vue.match(/<section v-else-if="page === 'profiles'"[\s\S]*?<\/section>/)[0];
+  for (const m of block.matchAll(/t\('([^']+)'/g)) keys.push(m[1]);
+  for (const m of vue.matchAll(/profileFileNote\.value = "([^"]+)"/g)) keys.push(m[1]);
+  assert.ok(keys.includes("导出的文件里有明文的 WiFi 密码和 4G APN 密码，拿到文件的人都能看到。请只存到自己信任的地方，不要随便发给别人。"));
+  assert.ok(keys.includes("同时下发 4G 开关"));
+  assert.ok(keys.includes("已导出。文件里有明文密码，请妥善保管"));
+  const legacy = new Set(["这份配置存在这台手机上，不绑定某一台桩。连上同型号的充电桩后，都可以下发。", "从当前充电桩保存", "还没有一键配置",
+    "把「{name}」下发到当前连接的充电桩？", "确认删除这份配置？", "确认下发", "取消", "确认删除", "重命名", "下发到当前充电桩", "删除"]);
+  for (const item of languages) {
+    if (item.id === "zh") continue;
+    for (const key of keys) {
+      if (legacy.has(key)) continue;    /* 2.8.0 之前就有、别的语言退回英文的老字符串，不在这次范围 */
+      const out = translate(item.id, key, { n: 2, same: 1, name: "X" });
+      assert.ok(out && out !== key, item.id + " 没翻: " + key);
+      if (key.includes("{n}")) assert.ok(out.includes("2"), item.id + " 丢了 {n}: " + key);
+      if (key.includes("{name}")) assert.ok(out.includes("X"), item.id + " 丢了 {name}: " + key);
+    }
+  }
 });

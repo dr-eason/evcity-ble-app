@@ -19,6 +19,9 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
     private let mock = AppMode.mockBle
     private var link: BleLink?
     private var gate: [String: String] = [:]
+    /// 一键配置导出时开着的那个导出窗口和临时文件（和固件升级的选文件窗口区分开）。
+    private var exportPicker: UIDocumentPickerViewController?
+    private var exportTemp: URL?
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return .lightContent
@@ -204,6 +207,8 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
             restart()
         case .pickFile:
             pickFile()
+        case .exportFile(let name, let text):
+            exportFile(name: name, text: text)
         }
     }
 
@@ -248,7 +253,46 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
         present(picker, animated: true, completion: nil)
     }
 
+    // MARK: 一键配置导出（2.8.0）
+
+    /// 先写进 App 自己的临时目录，再用「文件」App 的导出窗口让用户选位置（相当于 Android 的
+    /// ACTION_CREATE_DOCUMENT）。asCopy：拷一份过去，临时文件导出后删掉。
+    private func exportFile(name: String, text: String) {
+        if exportPicker != nil {
+            emit(.export(ok: false, reason: "fail"))
+            return
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("export", isDirectory: true)
+        let url = folder.appendingPathComponent(name)
+        do {
+            try? FileManager.default.removeItem(at: folder)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url, options: [.atomic, .completeFileProtection])
+        } catch {
+            emit(.export(ok: false, reason: "fail"))
+            return
+        }
+        let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+        picker.delegate = self
+        exportPicker = picker
+        exportTemp = url
+        present(picker, animated: true, completion: nil)
+    }
+
+    private func finishExport(ok: Bool, reason: String) {
+        exportPicker = nil
+        if let url = exportTemp {
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
+        exportTemp = nil
+        emit(.export(ok: ok, reason: reason))
+    }
+
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if controller === exportPicker {
+            finishExport(ok: !urls.isEmpty, reason: urls.isEmpty ? "fail" : "")
+            return
+        }
         guard let url = urls.first,
               let data = try? Data(contentsOf: url),
               data.count <= Self.maxPickedBytes else {
@@ -260,6 +304,10 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if controller === exportPicker {
+            finishExport(ok: false, reason: "cancel")
+            return
+        }
         run("window.__evcNative&&window.__evcNative.filePicked(null,null)")
     }
 }

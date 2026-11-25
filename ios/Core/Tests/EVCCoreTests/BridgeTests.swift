@@ -117,6 +117,24 @@ final class BridgeCallTests: XCTestCase {
         XCTAssertNil(call("saveGate", ["", "123456"]))
     }
 
+    func testExportFile() {
+        XCTAssertEqual(call("exportFile", ["evcity-ac06-oneclick-20261125-1430.json", "{}"]),
+                       .exportFile(name: "evcity-ac06-oneclick-20261125-1430.json", text: "{}"))
+        XCTAssertEqual(call("exportFile", ["../x/y", "{}"]), .exportFile(name: "y.json", text: "{}"))
+        XCTAssertEqual(call("exportFile", ["", "{}"]), .exportFile(name: ExportRules.defaultName, text: "{}"))
+        XCTAssertNil(call("exportFile", ["a.json", ""]))
+        XCTAssertNil(call("exportFile", ["a.json"]))
+        XCTAssertNil(call("exportFile", ["a.json", String(repeating: "x", count: ExportRules.maxBytes + 1)]))
+    }
+
+    func testExportFileName() {
+        XCTAssertEqual(ExportRules.fileName("a:b*c?.txt"), "abc.txt.json")
+        XCTAssertEqual(ExportRules.fileName(".hidden"), ExportRules.defaultName)
+        XCTAssertEqual(ExportRules.fileName("x\\y\\z"), "z.json")
+        XCTAssertEqual(ExportRules.fileName("配置.JSON"), "配置.JSON")
+        XCTAssertEqual(ExportRules.fileName("a\u{0}b\nc"), "abc.json")
+    }
+
     func testRubbish() {
         XCTAssertNil(BridgeCall.parse(nil))
         XCTAssertNil(BridgeCall.parse("scan"))
@@ -152,6 +170,14 @@ final class BridgeEventTests: XCTestCase {
         XCTAssertEqual(strings(.note("蓝牙已断开")), ["t": "note", "s": "蓝牙已断开"])
         XCTAssertEqual(strings(.page("charge")), ["t": "page", "s": "charge"])
         XCTAssertEqual(strings(.line("ACK APN 0\t\"x\"")), ["t": "line", "s": "ACK APN 0\t\"x\""])
+    }
+
+    func testExportEvent() {
+        let object = decode(BridgeEvent.export(ok: true, reason: "").json)
+        XCTAssertEqual(object["t"] as? String, "export")
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        XCTAssertEqual(object["s"] as? String, "")
+        XCTAssertEqual(decode(BridgeEvent.export(ok: false, reason: "cancel").json)["s"] as? String, "cancel")
     }
 
     func testScanIsBoolean() {

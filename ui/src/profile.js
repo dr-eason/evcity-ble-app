@@ -1,5 +1,15 @@
 /* 机型一键配置。存在手机上，不绑定某一台桩的地址。 */
+import { SCREEN_LANGS, parseScrLangAck } from "./scrlang.js";
+import { SCREEN_THEMES, parseScrThemeAck } from "./scrtheme.js";
+import { PHASE_BUSY_REASON, parsePhaseLine } from "./phase.js";
+import { parseLteSwitch } from "./lte.js";
 
+/* 每一组。下发按这个顺序：
+ *   since     桩的固件从这个版本起才有这组命令；更旧（或者版本读不出）的桩上读取、下发都跳过。
+ *   optional  这一组是后加的，旧 App 存的备份里没有：下发时备份里没有就跳过，不算失败。
+ *   quiet     桩对读写命令一声不吭时按“固件还不支持”跳过，不算失败（2.8.0 开发期间的
+ *             固件版本号已经是 2.8.0，但还没有这两条命令）。
+ *   needs     要用户在下发确认里勾选了才下发（opts 里的这个开关）。 */
 export const SECTIONS = [
   { key: "safety", name: "安全管理参数" },
   { key: "imax", name: "最大电流" },
@@ -11,11 +21,31 @@ export const SECTIONS = [
   { key: "tel", name: "遥测" },
   { key: "netstop", name: "断网停充" },
   { key: "net", name: "网络设置" },
+  /* 4G 开关（固件 2.6.16 起）。备份时读下来，下发时默认不发：开关和 WiFi、遥测互斥，照着
+   * 备份去拨会把目标桩正在用的那条链路关掉。只有下发确认里勾选了「同时下发 4G 开关」才发。
+   * 放在 WiFi 后面、OCPP 前面：WiFi 和 4G 都关掉时桩会连带关 OCPP，先把链路定下来，再写
+   * OCPP 开关，读回核对才对得上。 */
+  { key: "lte", name: "4G 开关", since: [2, 6, 16], optional: true, needs: "withLte" },
   { key: "ocpp", name: "OCPP设置" },
-  /* 4G 的 APN（固件 2.6.16 起）。只带 Protocol、APN、账号、密码，不带 4G 开关：开关和 WiFi、
-   * 遥测互斥，照着备份去拨会把这台桩正在用的那条链路关掉。 */
-  { key: "apn", name: "4G APN", since: [2, 6, 16] },
+  /* 4G 的 APN（固件 2.6.16 起）：Protocol、APN、账号、密码。 */
+  { key: "apn", name: "4G APN", since: [2, 6, 16], optional: true },
+  /* 屏幕语言、屏幕颜色（固件 2.8.0 起）。 */
+  { key: "scrlang", name: "屏幕语言", since: [2, 8, 0], optional: true, quiet: true },
+  { key: "scrtheme", name: "屏幕颜色", since: [2, 8, 0], optional: true, quiet: true },
+  /* 相位（单相 / 三相）。最早的固件就有 PHASEGET / PHASESET，不设 since；桩不回就是真的没读到，
+   * 算失败（相位关系到保护，宁可报出来也不悄悄漏掉）。充电中改成另一个值桩回 BUSY。 */
+  { key: "phase", name: "相位", optional: true },
 ];
+
+/* 备份记录的格式版本。
+ *   1（记录里没有 format 字段）：2.8.0 之前的 App 存的，body 是前 11 组，可能还有 apn。
+ *   2：多了 lte、scrLang、scrTheme、phase（桩不支持时是 null），记录里带 format: 2。 */
+export const PROFILE_FORMAT = 2;
+export const PROFILE_MODEL = "AC06";
+/* 导出文件的标记。 */
+export const EXPORT_KIND = "evcity-ac06-oneclick";
+/* 导入文件最大多大（字节）。一份配置不到 2 KB。 */
+export const IMPORT_MAX_BYTES = 1024 * 1024;
 
 function versionAtLeast(version, need) {
   const m = String(version || "").replace(/^[Vv]/, "").match(/^(\d+)\.(\d+)(?:\.(\d+))?/);
@@ -27,12 +57,35 @@ function versionAtLeast(version, need) {
   return true;
 }
 
+/* 这份备份里有没有这一组（后加的几组，旧备份里没有，或者备份时桩不支持是 null）。 */
+export function hasSection(key, body) {
+  if (!body) return false;
+  switch (key) {
+    case "apn": return !!body.apn;
+    case "lte": return typeof body.lte === "boolean";
+    case "scrlang": return validScrLang(body.scrLang);
+    case "scrtheme": return validScrTheme(body.scrTheme);
+    case "phase": return validPhase(body.phase);
+    default: return body[key] !== undefined && body[key] !== null;
+  }
+}
+
 /* 这一项这次要不要跳过。要跳过返回原因（界面上写“已跳过”，不算失败），不跳过返回 ""。
  *   - 桩的固件太旧、不认识这一项的命令（读不出版本也按旧的算）
- *   - 下发时这份备份里没有这一项（备份是从旧固件的桩上读的，或者是旧 App 存的） */
-export function sectionSkip(section, mode, fwVersion, body) {
+ *   - 下发时用户没勾选这一项（4G 开关）
+ *   - 下发时这份备份里没有这一项（备份是从旧固件的桩上读的，或者是旧 App 存的）
+ * opts.withLte：下发确认里勾了「同时下发 4G 开关」。 */
+export function sectionSkip(section, mode, fwVersion, body, opts) {
   if (section.since && !versionAtLeast(fwVersion, section.since)) return "固件不支持";
-  if (mode === "write" && section.key === "apn" && !(body && body.apn)) return "这份配置里没有这一项";
+  if (mode === "write" && section.needs && !(opts && opts[section.needs])) return "没有勾选，不下发";
+  if (mode === "write" && section.optional && !hasSection(section.key, body)) return "这份配置里没有这一项";
+  return "";
+}
+
+/* 桩对这一组的命令一声不吭（line 是 null）时，要不要当作“固件还不支持”跳过。
+ * 要跳过返回原因，否则返回 ""（照常算失败）。 */
+export function quietSkip(section, line) {
+  if (section && section.quiet && !line) return "充电桩没有应答，固件可能还不支持这一项";
   return "";
 }
 
@@ -85,6 +138,10 @@ export function blankBody() {
     wifi: { on: false, ssid: "", pass: "" },
     ocpp: { on: false, url: "" },
     apn: null,              /* 从 2.6.16 起的桩上读到才有：{ proto, apn, user, pass } */
+    lte: null,              /* 4G 开关，从 2.6.16 起的桩上读到才有：true / false */
+    scrLang: null,          /* 屏幕语言 0–4（scrlang.js），从 2.8.0 起的桩上读到才有 */
+    scrTheme: null,         /* 屏幕颜色 0–6（scrtheme.js），从 2.8.0 起的桩上读到才有 */
+    phase: null,            /* 相位 0 单相、1 三相（phase.js） */
   };
 }
 
@@ -185,6 +242,18 @@ function validApnText(text) {
 function validApn(apn) {
   return !!apn && [0, 1, 2].indexOf(Number(apn.proto)) >= 0 && /^[012]$/.test(String(apn.proto)) &&
     validApnText(apn.apn) && validApnText(apn.user) && validApnText(apn.pass);
+}
+
+function validScrLang(value) {
+  return Number.isInteger(value) && value >= 0 && value < SCREEN_LANGS.length;
+}
+
+function validScrTheme(value) {
+  return Number.isInteger(value) && value >= 0 && value < SCREEN_THEMES.length;
+}
+
+function validPhase(value) {
+  return value === 0 || value === 1;
 }
 
 function parseApnLine(line, body) {
@@ -393,6 +462,59 @@ function parseOcppUrl(line, body) {
   return true;
 }
 
+function acceptLteSwitch(line) {
+  return parseLteSwitch(line) !== null;
+}
+
+function parseLteLine(line, body) {
+  const on = parseLteSwitch(line);
+  if (on === null) return false;
+  body.lte = on;
+  return true;
+}
+
+function acceptScrLang(line) {
+  const got = parseScrLangAck(line);
+  return got !== null && got.kind === "get";
+}
+
+function parseScrLangLine(line, body) {
+  const got = parseScrLangAck(line);
+  if (!got || got.kind !== "get" || got.lang === null) return false;
+  body.scrLang = got.lang;
+  return true;
+}
+
+function acceptScrTheme(line) {
+  const got = parseScrThemeAck(line);
+  return got !== null && got.kind === "get";
+}
+
+function parseScrThemeLine(line, body) {
+  const got = parseScrThemeAck(line);
+  if (!got || got.kind !== "get" || got.theme === null) return false;
+  body.scrTheme = got.theme;
+  return true;
+}
+
+function acceptPhase(line) {
+  const got = parsePhaseLine(line);
+  return got !== null && got.kind === "get";
+}
+
+function parsePhase(line, body) {
+  const got = parsePhaseLine(line);
+  if (!got || got.kind !== "get") return false;
+  body.phase = got.phase;
+  return true;
+}
+
+/* PHASESET 的应答：BUSY 时说清楚要先停充电。 */
+export function phaseReason(line) {
+  if (line && /^ACK\s+PHASESET\s+BUSY\b/.test(line.trim())) return PHASE_BUSY_REASON;
+  return ackReason(line);
+}
+
 export function readPlan(key) {
   switch (key) {
     case "safety":
@@ -430,6 +552,14 @@ export function readPlan(key) {
       };
     case "apn":
       return { list: [readStep("APNGET", (line) => line.indexOf("ACK APN ") === 0, parseApnLine)] };
+    case "lte":
+      return { list: [readStep("LTEGET", acceptLteSwitch, parseLteLine)] };
+    case "scrlang":
+      return { list: [readStep("SCRLANGGET", acceptScrLang, parseScrLangLine)] };
+    case "scrtheme":
+      return { list: [readStep("SCRTHEMEGET", acceptScrTheme, parseScrThemeLine)] };
+    case "phase":
+      return { list: [readStep("PHASEGET", acceptPhase, parsePhase)] };
     default:
       return { error: "这份配置里没有这一项" };
   }
@@ -528,6 +658,21 @@ export function writePlan(key, body, opts) {
         list: [ackStep("APNSET\t" + Number(body.apn.proto) + "\t" + String(body.apn.apn || "") + "\t" +
           String(body.apn.user || "") + "\t" + String(body.apn.pass || ""), "APNSET")],
       };
+    case "lte":
+      if (typeof body.lte !== "boolean") return { error: "这份配置里没有这一项" };
+      return { list: [ackStep("LTESET\t" + (body.lte ? "1" : "0"), "LTESET")] };
+    case "scrlang":
+      if (!validScrLang(body.scrLang)) return { error: "这份配置里没有这一项" };
+      return { list: [ackStep("SCRLANGSET\t" + body.scrLang, "SCRLANGSET")] };
+    case "scrtheme":
+      if (!validScrTheme(body.scrTheme)) return { error: "这份配置里没有这一项" };
+      return { list: [ackStep("SCRTHEMESET\t" + body.scrTheme, "SCRTHEMESET")] };
+    case "phase": {
+      if (!validPhase(body.phase)) return { error: "这份配置里没有这一项" };
+      const step = ackStep("PHASESET\t" + body.phase, "PHASESET");
+      step.reason = phaseReason;
+      return { list: [step] };
+    }
     default:
       return { error: "这份配置里没有这一项" };
   }
@@ -598,7 +743,152 @@ export function sameSection(key, want, got) {
         String(want.apn.apn || "") === String(got.apn.apn || "") &&
         String(want.apn.user || "") === String(got.apn.user || "") &&
         String(want.apn.pass || "") === String(got.apn.pass || "");
+    case "lte":
+      return typeof want.lte === "boolean" && want.lte === got.lte;
+    case "scrlang":
+      return validScrLang(want.scrLang) && want.scrLang === got.scrLang;
+    case "scrtheme":
+      return validScrTheme(want.scrTheme) && want.scrTheme === got.scrTheme;
+    case "phase":
+      return validPhase(want.phase) && want.phase === got.phase;
     default:
       return false;
   }
+}
+
+
+/* ---- 备份记录、格式版本、导出 / 导入 ---- */
+
+/* 记录是哪个格式。没有 format 字段的是 2.8.0 之前的 App 存的，算 1。不是正整数返回 0。 */
+export function profileFormat(item) {
+  if (!item || item.format === undefined) return 1;
+  return Number.isInteger(item.format) && item.format >= 1 ? item.format : 0;
+}
+
+/* 手机上存着的一条记录能不能列出来。和以前一样宽：有 id、名称、body，机型是 AC06。
+ * 没有 format 的旧记录照样算；里面缺哪一组，下发时按 sectionSkip 跳过或报失败。 */
+export function storedProfileOk(item) {
+  return !!(item && item.id && item.name && item.body && typeof item.body === "object" &&
+    item.model === PROFILE_MODEL);
+}
+
+/* 新存的一条记录。 */
+export function makeProfile(name, body, savedAt, id) {
+  return { format: PROFILE_FORMAT, id, name, savedAt, model: PROFILE_MODEL, body };
+}
+
+function sectionName(key) {
+  const found = SECTIONS.find((section) => section.key === key);
+  return found ? found.name : key;
+}
+
+/* 导入时逐组检查 body。合格返回 ""，否则返回不合格的那一组的名字（界面上翻译后显示）。
+ * 前 10 组加 OCPP（旧 App 一直都存）必须有；后加的几组可以没有，有就要合法。 */
+export function bodyProblem(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "配置内容";
+  const flag = (item) => !!item && typeof item === "object" && typeof item.on === "boolean";
+  if (!validSafety(body.safety)) return sectionName("safety");
+  if (!Number.isInteger(body.imax) || body.imax < 6 || body.imax > 32) return sectionName("imax");
+  if (typeof body.plug !== "boolean") return sectionName("plug");
+  if (!normalCards(body.cards)) return sectionName("cards");
+  if (!validSched(body.sched)) return sectionName("sched");
+  if (!flag(body.qr) || typeof body.qr.text !== "string" || !validQr(body.qr.text)) return sectionName("qr");
+  if (!flag(body.ocfw) || typeof body.ocfw.text !== "string" || !validOcfw(body.ocfw.text)) return sectionName("ocfw");
+  if (typeof body.tel !== "boolean") return sectionName("tel");
+  if (!flag(body.netstop) || !Number.isInteger(body.netstop.sec) || body.netstop.sec < 10 || body.netstop.sec > 600) {
+    return sectionName("netstop");
+  }
+  if (!flag(body.wifi) || typeof body.wifi.ssid !== "string" || typeof body.wifi.pass !== "string" ||
+      !validWifi(body.wifi)) return sectionName("net");
+  if (!flag(body.ocpp) || typeof body.ocpp.url !== "string" || !validOcpp(body.ocpp.url)) return sectionName("ocpp");
+  const absent = (value) => value === undefined || value === null;
+  if (!absent(body.apn) && !validApn(body.apn)) return sectionName("apn");
+  if (!absent(body.lte) && typeof body.lte !== "boolean") return sectionName("lte");
+  if (!absent(body.scrLang) && !validScrLang(body.scrLang)) return sectionName("scrlang");
+  if (!absent(body.scrTheme) && !validScrTheme(body.scrTheme)) return sectionName("scrtheme");
+  if (!absent(body.phase) && !validPhase(body.phase)) return sectionName("phase");
+  return "";
+}
+
+/* 导出文件的内容：整个列表，带格式版本和导出时间。 */
+export function exportText(list, now) {
+  const profiles = (Array.isArray(list) ? list : []).filter(storedProfileOk).map((item) => ({
+    format: profileFormat(item) || PROFILE_FORMAT,
+    id: String(item.id),
+    name: String(item.name),
+    savedAt: item.savedAt,
+    model: PROFILE_MODEL,
+    body: item.body,
+  }));
+  return JSON.stringify({ kind: EXPORT_KIND, format: PROFILE_FORMAT, exportedAt: now, profiles }, null, 2) + "\n";
+}
+
+/* 导出文件名：evcity-ac06-oneclick-20261125-1430.json（按手机本地时间）。 */
+export function exportFileName(now) {
+  const date = new Date(now);
+  if (Number.isNaN(date.getTime())) return EXPORT_KIND + ".json";
+  const p = (n) => (n < 10 ? "0" : "") + n;
+  return EXPORT_KIND + "-" + date.getFullYear() + p(date.getMonth() + 1) + p(date.getDate()) + "-" +
+    p(date.getHours()) + p(date.getMinutes()) + ".json";
+}
+
+function sameProfile(a, b) {
+  return a.name === b.name && a.savedAt === b.savedAt && JSON.stringify(a.body) === JSON.stringify(b.body);
+}
+
+/* 读导入的文件。text 是文件内容，existing 是手机上已有的列表，newId() 给新记录取 id。
+ * 认三种写法：导出文件（{ kind, format, profiles: [...] }）、记录数组、单独一条记录。
+ * 有一条不合格就整份不导入，返回 { error, vars }（error 是界面上 t() 的键）。
+ * 合格返回 { list: 要加进去的新记录, same: 已经在列表里的条数 }。 */
+export function importText(text, existing, newId) {
+  const raw = String(text == null ? "" : text);
+  if (new TextEncoder().encode(raw).length > IMPORT_MAX_BYTES) return { error: "文件太大，不是一键配置文件" };
+  let data;
+  try {
+    data = JSON.parse(raw.replace(/^\uFEFF/, ""));
+  } catch (e) {
+    return { error: "这个文件不是一键配置文件" };
+  }
+  let items;
+  if (Array.isArray(data)) items = data;
+  else if (data && typeof data === "object" && Array.isArray(data.profiles)) {
+    if (data.kind !== undefined && data.kind !== EXPORT_KIND) return { error: "这个文件不是一键配置文件" };
+    const format = profileFormat(data);
+    if (!format) return { error: "这个文件不是一键配置文件" };
+    if (format > PROFILE_FORMAT) return { error: "这个文件是更新版本的 App 导出的，请先升级 App" };
+    items = data.profiles;
+  }
+  else if (data && typeof data === "object" && data.body) items = [data];
+  else return { error: "这个文件不是一键配置文件" };
+  if (!items.length) return { error: "文件里没有配置" };
+  const have = Array.isArray(existing) ? existing.slice() : [];
+  const list = [];
+  let same = 0;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const n = i + 1;
+    if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "第 {n} 份配置不能用", vars: { n } };
+    const format = profileFormat(item);
+    if (!format) return { error: "第 {n} 份配置不能用", vars: { n } };
+    if (format > PROFILE_FORMAT) return { error: "这个文件是更新版本的 App 导出的，请先升级 App" };
+    if (item.model !== PROFILE_MODEL) return { error: "第 {n} 份配置不是 AC06 充电桩的", vars: { n } };
+    const name = cleanProfileName(item.name);
+    if (!name || typeof item.name !== "string") return { error: "第 {n} 份配置的名称不能用", vars: { n } };
+    const bad = bodyProblem(item.body);
+    if (bad) return { error: "第 {n} 份配置里的「{name}」不能用，整个文件没有导入", vars: { n, name: bad } };
+    const body = JSON.parse(JSON.stringify(item.body));
+    body.cards = normalCards(body.cards);
+    const savedAt = Number.isFinite(item.savedAt) ? item.savedAt : Date.now();
+    const record = { format, id: "", name, savedAt, model: PROFILE_MODEL, body };
+    if (have.some((old) => storedProfileOk(old) && sameProfile(old, record))) {
+      same += 1;
+      continue;
+    }
+    let id = String(newId());
+    while (have.some((old) => old && old.id === id)) id = String(newId());
+    record.id = id;
+    have.push(record);
+    list.push(record);
+  }
+  return { list, same };
 }

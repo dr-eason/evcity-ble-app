@@ -13,13 +13,15 @@ public struct BridgeDevice: Equatable {
     }
 }
 
-/// 原生发给页面的事件，页面里统一由 `onBle(obj)` 接。和 Android 的五种一样。
+/// 原生发给页面的事件，页面里统一由 `onBle(obj)` 接。和 Android 的六种一样。
 public enum BridgeEvent: Equatable {
     case note(String)
     case page(String)
     case scan(Bool)
     case line(String)
     case devs([BridgeDevice])
+    /// 一键配置导出（2.8.0）的结果。reason：成功是 ""，用户取消是 "cancel"，其余 "fail"。
+    case export(ok: Bool, reason: String)
 
     public var object: [String: Any] {
         switch self {
@@ -34,6 +36,8 @@ public enum BridgeEvent: Equatable {
         case .devs(let list):
             let rows: [[String: Any]] = list.map { ["name": $0.name, "addr": $0.addr, "rssi": $0.rssi] }
             return ["t": "devs", "list": rows]
+        case .export(let ok, let reason):
+            return ["t": "export", "ok": ok, "s": reason]
         }
     }
 
@@ -75,6 +79,8 @@ public enum BridgeCall: Equatable {
     case heartbeatTime(Bool)
     case restart
     case pickFile
+    /// 一键配置导出（2.8.0）：建议的文件名（已经过 ExportRules.fileName）和文件内容。
+    case exportFile(name: String, text: String)
 
     /// 一条命令能不能发：空的、带换行的不发。和 Java Bridge.send 一样。
     public static func sendable(_ text: String) -> Bool {
@@ -138,9 +144,44 @@ public enum BridgeCall: Equatable {
             return .restart
         case "pickFile":
             return .pickFile
+        case "exportFile":
+            guard let content = text(1), !content.isEmpty, content.utf8.count <= ExportRules.maxBytes else {
+                return nil
+            }
+            return .exportFile(name: ExportRules.fileName(text(0) ?? ""), text: content)
         default:
             return nil
         }
+    }
+}
+
+/// 一键配置导出的文件名和大小。和 Android 的 MainActivity.exportName 同一套规则。
+public enum ExportRules {
+    public static let defaultName = "evcity-ac06-oneclick.json"
+    public static let maxBytes = 2 * 1024 * 1024
+
+    /// 去掉路径和控制字符、文件系统不收的字符，最长 80 个字符，没有就用默认名，结尾补 .json。
+    public static func fileName(_ name: String) -> String {
+        var base = name
+        if let slash = base.lastIndex(where: { $0 == "/" || $0 == "\\" }) {
+            base = String(base[base.index(after: slash)...])
+        }
+        let banned: Set<Character> = [":", "*", "?", "\"", "<", ">", "|"]
+        var out = ""
+        for ch in base where out.count < 80 {
+            if banned.contains(ch) || ch.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
+                continue
+            }
+            out.append(ch)
+        }
+        var clean = out.trimmingCharacters(in: .whitespaces)
+        if clean.isEmpty || clean.hasPrefix(".") {
+            clean = defaultName
+        }
+        if !clean.lowercased().hasSuffix(".json") {
+            clean += ".json"
+        }
+        return clean
     }
 }
 

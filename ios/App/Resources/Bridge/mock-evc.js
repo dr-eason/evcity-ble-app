@@ -15,7 +15,7 @@
     { name: "EVC-AC06-0002", addr: "5A1C0002-7E57-4AC6-9F00-000000000002", rssi: -63 },
     { name: "EVC-AC06-0003", addr: "5A1C0003-7E57-4AC6-9F00-000000000003", rssi: -79 }
   ];
-  var FW = "2.6.16";
+  var FW = "3.0.0";
 
   var queue = [];
   var draining = false;
@@ -229,7 +229,12 @@
       case "APNGET": return ["ACK APN " + pile.apn.proto + "\t" + pile.apn.apn];
       case "APNSET": return ["ACK APNSET OK"];
       case "PHASEGET": return ["PHASE " + (pile.phase ? "1" : "0")];
-      case "PHASESET": pile.phase = arg[0] === "1"; return ["ACK PHASESET OK"];
+      case "PHASESET":
+        /* 和固件 wb2.c 一样：只认 0 / 1；充电中改成另一个值回 BUSY，值没变照常 OK。 */
+        if (arg.length !== 1 || (arg[0] !== "0" && arg[0] !== "1")) return ["ACK PHASESET FAIL"];
+        if ((arg[0] === "1") !== pile.phase && pile.state === "CHARGING") return ["ACK PHASESET BUSY"];
+        pile.phase = arg[0] === "1";
+        return ["ACK PHASESET OK"];
       case "QRGET": return ["QR " + (pile.qr.on ? "1" : "0") + "\t" + pile.qr.text];
       case "QRSET": return ["ACK QRSET OK"];
       case "OCFWGET": return ["OCFW " + (pile.ocfw.on ? "1" : "0") + "\t" + pile.ocfw.text];

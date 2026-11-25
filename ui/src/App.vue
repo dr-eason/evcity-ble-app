@@ -169,6 +169,10 @@
           <span><strong>{{ t('保护设置') }}</strong><small>{{ t('过压、欠压、CP、接地、漏电') }}</small></span>
           <em>›</em>
         </button>
+        <button class="card device" @click="openPhase">
+          <span><strong>{{ t('相位') }}</strong><small>{{ t('单相或三相，决定 L2、L3 是否参与保护判断') }}</small></span>
+          <em class="ver">{{ phaseBrief }}</em>
+        </button>
         <button class="card device" @click="openTz">
           <span><strong>{{ t('时区设置') }}</strong><small>{{ t('屏幕、充电记录和预约的钟点按这个时区') }}</small></span>
           <em class="ver">{{ tzBrief }}</em>
@@ -236,11 +240,31 @@
     <section v-else-if="page === 'profiles'" class="body">
       <p class="note">{{ t('这份配置存在这台手机上，不绑定某一台桩。连上同型号的充电桩后，都可以下发。') }}</p>
       <button class="go" @click="beginSaveProfile">{{ t('从当前充电桩保存') }}</button>
+      <div class="pair">
+        <button :disabled="!profiles.length" @click="askExport">{{ t('导出到文件') }}</button>
+        <button @click="pickImport">{{ t('从文件导入') }}</button>
+      </div>
+      <input ref="importInput" class="file" type="file" accept="*/*" @change="onImportFile">
+      <div v-if="exportAsk" class="card">
+        <p class="note">{{ t('导出的文件里有明文的 WiFi 密码和 4G APN 密码，拿到文件的人都能看到。请只存到自己信任的地方，不要随便发给别人。') }}</p>
+        <div class="pair">
+          <button class="go" @click="confirmExport">{{ t('我知道了，导出') }}</button>
+          <button @click="exportAsk = false">{{ t('取消') }}</button>
+        </div>
+      </div>
+      <p v-if="profileFileNote" class="note">{{ profileFileText }}</p>
       <p v-if="!profiles.length" class="empty">{{ t('还没有一键配置') }}</p>
       <article v-for="item in profiles" :key="item.id" class="card">
         <strong>{{ item.name }}</strong>
         <p class="note">{{ profileWhen(item.savedAt) }}</p>
         <p v-if="profileAskId === item.id" class="note">{{ t('把「{name}」下发到当前连接的充电桩？', { name: item.name }) }}</p>
+        <label v-if="profileAskId === item.id && hasSection('lte', item.body)" class="row">
+          <span>
+            <strong>{{ t('同时下发 4G 开关') }}</strong>
+            <small>{{ t('默认不下发。勾选后按这份配置打开或关闭 4G，可能会断开这台充电桩正在用的 WiFi 或 4G 连接。') }}</small>
+          </span>
+          <input v-model="profileWithLte" type="checkbox">
+        </label>
         <p v-if="profileDeleteId === item.id" class="note">{{ t('确认删除这份配置？') }}</p>
         <div v-if="profileAskId === item.id" class="pair">
           <button class="go" @click="startApply(item)">{{ t('确认下发') }}</button>
@@ -561,6 +585,20 @@
       <p class="note">{{ t('密码、设置、键盘、时区、4G 和升级页不换颜色。充电桩的屏幕文件是旧版本时屏幕不会变色，颜色先存着，重新烧录屏幕文件后生效。') }}</p>
     </section>
 
+    <section v-else-if="page === 'phase'" class="body">
+      <p class="note">{{ t('点单相或三相，直接保存到充电桩，断电后仍然有效。和充电桩屏幕设置第 3 页的 Power Model 是同一个设置。') }}</p>
+      <div class="card">
+        <small class="verkey">{{ t('充电桩当前相位') }}</small>
+        <strong class="verval">{{ phaseBrief }}</strong>
+      </div>
+      <p v-if="phaseNote" class="note">{{ t(phaseNote) }}</p>
+      <div class="pair">
+        <button v-for="item in PHASES" :key="item.id" :class="{ go: phaseKnown && item.id === phaseNow }"
+                :disabled="phaseSaving || phaseState !== 'ok'" @click="pickPhase(item.id)">{{ t(item.name) }}</button>
+      </div>
+      <p class="note">{{ t('三相接线的充电桩要设成三相，L2、L3 才参与过压、欠压、过流和短路保护。正在充电时不能改相位，请先停止充电。') }}</p>
+    </section>
+
     <section v-else-if="page === 'lte'" class="body">
       <p v-if="lteState === 'unsupported'" class="note">{{ t('充电桩固件不支持 4G，需要升级到 2.6.16 或更高') }}</p>
       <p v-else-if="lteState === 'silent'" class="note">{{ t('充电桩没有应答，请重新读取') }}</p>
@@ -616,6 +654,7 @@
         <strong>{{ otaName }}</strong>
         <p class="note">{{ t('大小') }} {{ otaSize }} {{ t('字节') }}</p>
         <p v-if="otaFileVer" class="note">{{ t('文件版本') }} {{ verLabel(otaFileVer) }}</p>
+        <p v-if="otaFileLayout" class="note">{{ t('固件分区') }} {{ layoutLabel(otaFileLayout) }}</p>
         <p class="note">{{ t('整包 CRC') }} {{ otaCrc }}</p>
       </div>
       <div v-if="otaPhase === 'preparing' || otaPhase === 'ready' || otaPhase === 'prepfail'" class="card">
@@ -670,6 +709,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import PrivacyPolicy from "./PrivacyPolicy.vue";
 import { languageFromTag, languages, translate } from "./i18n.js";
 import { OTA_CHUNK, otaWindowFor, parseDataAck, sendOtaChunks } from "./ota-window.js";
+import { FIRMWARE_MAX, firmwareLayout, layoutLabel, layoutMismatchNote, pileLayoutFrom } from "./fw-layout.js";
 import { liveRssi, liveRssiPending, wifiStatusText } from "./wifi-rssi.js";
 import { modverLabel, modverShort, parseModver, readModver } from "./modver.js";
 import { LTE_PROTOS, apnCommand, apnError, lteCellText, lteExclusive, lteHomeText, lteRegLabel, lteSetCommand, lteSignalText, lteSimLabel, lteStateLabel, lteSupported, parseApn, parseLteAck, parseLteBrief, parseLteCell, parseLteStat, parseLteSwitch, pollLteStat, readApn, readLte, rereadSwitches, sendLteSet } from "./lte.js";
@@ -683,7 +723,12 @@ import { CLOCK_RESYNC_MS, CLOCK_RETRY_MS, chargerClock, parseTimeGet, readCharge
 import { heartbeatCarriesTime, parseTimeAck, phoneTzMinutes, runTimeSync, zoneRereadDue } from "./time-sync.js";
 import { AUTH_LOCK_SECONDS, authDecide, commandName, isOtaCommand, lockLeft, lockNote, parseAuthLine, pinOk, queueRefused, resendable } from "./auth.js";
 import { TABS, isTabPage, langReturn, rootBack, subpageBack, tabBarShown, tabTitle } from "./tabs.js";
-import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, ocppUrlOk, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "./profile.js";
+import {
+  CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, IMPORT_MAX_BYTES, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, exportFileName,
+  exportText, hasSection, importText, makeProfile, ocppUrlOk, quietSkip, readPlan, sameSection, sectionSkip, splitCardLine,
+  storedProfileOk, voltageLimitError, writePlan,
+} from "./profile.js";
+import { PHASES, parsePhaseLine, phaseName, readPhase, savePhase } from "./phase.js";
 
 const langIds = languages.map((item) => item.id);
 function savedLang() {
@@ -876,6 +921,18 @@ const profilePercent = ref(0);
 const profileFinished = ref(false);
 const profileDoneNote = ref("");
 let profileRunId = 0;
+/* 下发确认里的「同时下发 4G 开关」，每次打开确认都回到不勾。 */
+const profileWithLte = ref(false);
+/* 导出 / 导入（2.8.0）。 */
+const exportAsk = ref(false);
+const importInput = ref(null);
+const profileFileNote = ref("");
+const profileFileVars = ref(null);
+const profileFileText = computed(() => {
+  const vars = Object.assign({}, profileFileVars.value || {});
+  if (vars.name) vars.name = t(vars.name);
+  return t(profileFileNote.value, vars);
+});
 let wifiClosedOcpp = false;
 /* 这次打开 WiFi（"wifi"）或遥测（"tel"）顺带关掉了 4G，保存成功的提示里要写上。 */
 let lteClosedBy = "";
@@ -918,6 +975,7 @@ const pageTitle = computed(() => {
   if (page.value === "tz") return "时区设置";
   if (page.value === "scrlang") return "屏幕语言";
   if (page.value === "scrtheme") return "屏幕颜色";
+  if (page.value === "phase") return "相位";
   if (page.value === "netstop") return "断网停充";
   if (page.value === "reboot") return "重启";
   if (page.value === "profiles") return "一键配置";
@@ -2003,6 +2061,68 @@ async function pickScrTheme(id) {
   else if (result.state === "silent") scrThemeNote.value = "充电桩没有应答，没有保存";
   else scrThemeNote.value = "没有保存";
 }
+/* 相位（命令见 phase.js）。和屏幕语言同一种做法：进页面读一次 PHASEGET；点一种就存：
+ * PHASESET，再 PHASEGET 读回来确认。等应答也用屏幕语言那一个 scrWait（几页不会同时开着）。 */
+const phaseNow = ref(0);
+const phaseKnown = ref(false);
+const phaseState = ref("idle");         /* idle / reading / ok / silent */
+const phaseSaving = ref(false);
+const phaseNote = ref("");
+let phaseRun = 0;
+const phaseBrief = computed(() => (phaseKnown.value ? t(phaseName(phaseNow.value)) : "›"));
+function resetPhase() {
+  phaseRun += 1;
+  scrWait = null;
+  phaseSaving.value = false;
+  phaseNote.value = "";
+}
+async function openPhase() {
+  menuPull++;
+  resetPhase();
+  page.value = "phase";
+  const token = phaseRun;
+  const alive = () => token === phaseRun && linkReady.value && page.value === "phase";
+  phaseState.value = "reading";
+  phaseNote.value = "正在读取";
+  const result = await readPhase({ ask: askScr, alive });
+  if (token !== phaseRun || result.state === "gone") return;
+  if (result.state === "ok") {
+    phaseNow.value = result.phase;
+    phaseKnown.value = true;
+    phaseState.value = "ok";
+    phaseNote.value = "";
+  }
+  else {
+    phaseState.value = "silent";
+    phaseNote.value = "充电桩没有应答。充电桩固件可能太旧，需要升级后再设置";
+  }
+}
+async function pickPhase(id) {
+  if (phaseSaving.value || phaseState.value !== "ok") return;
+  if (phaseKnown.value && id === phaseNow.value) {
+    phaseNote.value = "";
+    return;
+  }
+  const token = ++phaseRun;
+  const alive = () => token === phaseRun && linkReady.value && page.value === "phase";
+  phaseSaving.value = true;
+  phaseNote.value = "正在保存";
+  const result = await savePhase({ ask: askScr, alive, phase: id });
+  if (token !== phaseRun) return;
+  phaseSaving.value = false;
+  if (result.state === "gone") {
+    phaseNote.value = "";
+    return;
+  }
+  if (Number.isInteger(result.phase)) {
+    phaseNow.value = result.phase;
+    phaseKnown.value = true;
+  }
+  if (result.state === "ok") phaseNote.value = "已保存，断电后仍然有效";
+  else if (result.state === "busy") phaseNote.value = "充电桩正在充电，不能改相位。请先停止充电再改";
+  else if (result.state === "silent") phaseNote.value = "充电桩没有应答，没有保存";
+  else phaseNote.value = "没有保存";
+}
 function openModver() {
   menuPull++;
   page.value = "modver";
@@ -2013,7 +2133,8 @@ function loadProfiles() {
   try {
     const raw = JSON.parse(localStorage.getItem(PROFILE_KEY) || "[]");
     if (!Array.isArray(raw)) return [];
-    return raw.filter((item) => item && item.id && item.name && item.body && item.model === "AC06");
+    /* 没有 format 的旧记录（2.8.0 之前的 App 存的）照样列出来。 */
+    return raw.filter(storedProfileOk);
   } catch (e) {
     return [];
   }
@@ -2042,7 +2163,97 @@ function openProfiles() {
   profiles.value = loadProfiles();
   profileAskId.value = "";
   profileDeleteId.value = "";
+  exportAsk.value = false;
+  profileFileNote.value = "";
+  profileFileVars.value = null;
   page.value = "profiles";
+}
+/* 导出：先在页面上警告文件里有明文密码，确认后交给手机系统的保存窗口
+ * （安卓 ACTION_CREATE_DOCUMENT，iOS 文件 App 的导出），结果由原生用 {t:"export"} 告诉页面。 */
+function askExport() {
+  profileAskId.value = "";
+  profileDeleteId.value = "";
+  profileFileNote.value = "";
+  profileFileVars.value = null;
+  exportAsk.value = profiles.value.length > 0;
+}
+function confirmExport() {
+  exportAsk.value = false;
+  profileFileVars.value = null;
+  const now = Date.now();
+  const text = exportText(loadProfiles(), now);
+  const name = exportFileName(now);
+  const api = bridge();
+  if (api && typeof api.exportFile === "function") {
+    profileFileNote.value = "正在打开保存窗口";
+    try {
+      api.exportFile(name, text);
+    } catch (e) {
+      profileFileNote.value = "导出失败";
+    }
+    return;
+  }
+  if (!api) {
+    /* 不在手机 App 里（电脑浏览器调试）：浏览器自己下载。 */
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      profileFileNote.value = "已导出。文件里有明文密码，请妥善保管";
+    } catch (e) {
+      profileFileNote.value = "导出失败";
+    }
+    return;
+  }
+  profileFileNote.value = "这个版本的手机 App 不能导出文件，请更新 App";
+}
+function exportDone(msg) {
+  profileFileVars.value = null;
+  if (msg && msg.ok) profileFileNote.value = "已导出。文件里有明文密码，请妥善保管";
+  else if (msg && msg.s === "cancel") profileFileNote.value = "已取消导出";
+  else profileFileNote.value = "导出失败";
+}
+/* 导入：用和固件升级一样的 <input type="file">。整份文件都合格才加进列表，已有的不动。 */
+function pickImport() {
+  exportAsk.value = false;
+  profileAskId.value = "";
+  profileDeleteId.value = "";
+  profileFileNote.value = "";
+  profileFileVars.value = null;
+  if (importInput.value) importInput.value.click();
+}
+function onImportFile(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  profileFileVars.value = null;
+  if (file.size > IMPORT_MAX_BYTES) {
+    profileFileNote.value = "文件太大，不是一键配置文件";
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const got = importText(String(reader.result || ""), loadProfiles(), newProfileId);
+    if (got.error) {
+      profileFileVars.value = got.vars || null;
+      profileFileNote.value = got.error;
+      return;
+    }
+    if (got.list.length) storeProfiles(got.list.concat(loadProfiles()));
+    profileFileVars.value = { n: got.list.length, same: got.same };
+    if (!got.list.length) profileFileNote.value = "文件里的配置都已经在列表里，没有重复导入";
+    else if (got.same) profileFileNote.value = "导入了 {n} 份配置，另有 {same} 份已经在列表里";
+    else profileFileNote.value = "导入了 {n} 份配置";
+  };
+  reader.onerror = () => {
+    profileFileNote.value = "读不了这个文件";
+  };
+  reader.readAsText(file);
 }
 function beginSaveProfile() {
   profileNaming.value = "save";
@@ -2060,10 +2271,15 @@ function beginRename(item) {
 }
 function askApply(item) {
   profileDeleteId.value = "";
+  exportAsk.value = false;
+  profileFileNote.value = "";
+  profileWithLte.value = false;
   profileAskId.value = item.id;
 }
 function askDelete(item) {
   profileAskId.value = "";
+  exportAsk.value = false;
+  profileFileNote.value = "";
   profileDeleteId.value = item.id;
 }
 function removeProfile(item) {
@@ -2084,12 +2300,14 @@ function commitProfileName() {
     page.value = "profiles";
     return;
   }
-  runProfileJob("read", blankBody(), name);
+  runProfileJob("read", blankBody(), name, {});
 }
 function startApply(item) {
-  if (!item || !item.body || item.model !== "AC06") return;
+  if (!storedProfileOk(item)) return;
+  const opts = { withLte: !!profileWithLte.value && hasSection("lte", item.body) };
   profileAskId.value = "";
-  runProfileJob("write", JSON.parse(JSON.stringify(item.body)), item.name);
+  profileWithLte.value = false;
+  runProfileJob("write", JSON.parse(JSON.stringify(item.body)), item.name, opts);
 }
 function profileLogText(row) {
   const vars = Object.assign({}, row.vars || {});
@@ -2130,7 +2348,8 @@ async function verifySection(run, key, body) {
   }
   return sameSection(key, body, got) ? "" : "读回的值和写入的不一样";
 }
-async function runProfileJob(mode, body, name) {
+/* opts.withLte：下发确认里勾了「同时下发 4G 开关」。 */
+async function runProfileJob(mode, body, name, opts) {
   const run = ++profileRunId;
   profileMode.value = mode;
   profileTitle.value = name;
@@ -2145,9 +2364,10 @@ async function runProfileJob(mode, body, name) {
   for (let i = 0; i < SECTIONS.length; i++) {
     if (run !== profileRunId || page.value !== "profileRun") return;
     const section = SECTIONS[i];
-    /* 桩的固件不认识这一项（4G APN 是 2.6.16 起才有的），或者这份备份里没有它：跳过，不算
-     * 失败。不然旧固件的桩永远存不了备份。 */
-    const skip = sectionSkip(section, mode, fw.value === "—" ? "" : fw.value, body);
+    /* 桩的固件不认识这一项（4G 是 2.6.16 起、屏幕语言和颜色是 2.8.0 起才有的），这份备份里
+     * 没有它（旧 App 存的），或者用户没勾（4G 开关）：跳过，不算失败。不然旧固件的桩永远存
+     * 不了备份，旧备份也永远下发不完。 */
+    const skip = sectionSkip(section, mode, fw.value === "—" ? "" : fw.value, body, opts);
     if (skip) {
       await pushProfileLog("{name}已跳过：{reason}", "run", { name: section.name, reason: skip });
       if (run !== profileRunId || page.value !== "profileRun") return;
@@ -2155,7 +2375,8 @@ async function runProfileJob(mode, body, name) {
       profilePercent.value = Math.round(profileDone.value * 100 / SECTIONS.length);
       continue;
     }
-    const plan = mode === "read" ? readPlan(section.key) : writePlan(section.key, body, { cardSlots: cardSlots.value });
+    const plan = mode === "read" ? readPlan(section.key)
+      : writePlan(section.key, body, Object.assign({ cardSlots: cardSlots.value }, opts || {}));
     await pushProfileLog(mode === "read" ? "正在读取{name}" : "正在设置{name}", "run", { name: section.name });
     if (run !== profileRunId || page.value !== "profileRun") return;
     profilePercent.value = Math.round(i * 100 / SECTIONS.length);
@@ -2168,17 +2389,28 @@ async function runProfileJob(mode, body, name) {
     }
     let sectionOk = true;
     let reason = "回复超时";
+    let quiet = "";
     for (let stepIndex = 0; stepIndex < plan.list.length; stepIndex++) {
       if (run !== profileRunId || page.value !== "profileRun") return;
       const step = plan.list[stepIndex];
       profilePercent.value = Math.round((i + stepIndex / plan.list.length) * 100 / SECTIONS.length);
       const line = await askLine(run, step.command, step.accept);
       if (run !== profileRunId || page.value !== "profileRun") return;
+      /* 屏幕语言、颜色：版本号够了但桩一声不吭（2.8.0 开发版的固件），按不支持跳过。 */
+      quiet = quietSkip(section, line);
+      if (quiet) break;
       if (!line || !step.ok(line, body)) {
         sectionOk = false;
         reason = step.reason(line);
         break;
       }
+    }
+    if (quiet) {
+      await pushProfileLog("{name}已跳过：{reason}", "run", { name: section.name, reason: quiet });
+      if (run !== profileRunId || page.value !== "profileRun") return;
+      profileDone.value = i + 1;
+      profilePercent.value = Math.round(profileDone.value * 100 / SECTIONS.length);
+      continue;
     }
     if (sectionOk && mode === "write") {
       const bad = await verifySection(run, section.key, body);
@@ -2208,7 +2440,7 @@ async function runProfileJob(mode, body, name) {
       return;
     }
     const list = loadProfiles();
-    list.unshift({ id: newProfileId(), name, savedAt: Date.now(), model: "AC06", body });
+    list.unshift(makeProfile(name, body, Date.now(), newProfileId()));
     storeProfiles(list);
     profileDoneNote.value = "已保存到一键配置";
     return;
@@ -2396,6 +2628,9 @@ function resetCharge() {
   resetScrTheme();
   scrThemeKnown.value = false;
   scrThemeState.value = "idle";
+  resetPhase();
+  phaseKnown.value = false;
+  phaseState.value = "idle";
   wifiSaved.value = "未配置热点";
   plug.value = false;
   plugDip.value = false;
@@ -2993,6 +3228,8 @@ const otaName = ref("");
 const otaSize = ref(0);
 const otaCrc = ref("");
 const otaFileVer = ref("");
+/* 文件的分区布局（1 老分区 / 2 新板，fw-layout.js）。和桩报的布局对不上不发。 */
+const otaFileLayout = ref(0);
 const otaNote = ref("发送过程中充电桩亮白灯快闪");
 const otaNoteVars = ref(null);
 const otaPhase = ref("");
@@ -3113,19 +3350,6 @@ function openOta() {
 function pickFirmware() {
   if (firmwareInput.value) firmwareInput.value.click();
 }
-function readU32(bytes, offset) {
-  return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
-}
-function firmwareLooksValid(bytes) {
-  if (bytes.length < 8) return false;
-  const sp = readU32(bytes, 0);
-  const reset = readU32(bytes, 4);
-  const entry = reset & ~1;
-  if (sp < 0x20000000 || sp > 0x20018000) return false;
-  if ((reset & 1) === 0) return false;
-  if (entry < 0x0800C000 || entry >= 0x0800C000 + 0x32000) return false;
-  return true;
-}
 function crc32(bytes) {
   let crc = 0xFFFFFFFF;
   for (let i = 0; i < bytes.length; i++) {
@@ -3238,26 +3462,30 @@ function onFirmwareFile(event) {
   reader.onload = () => {
     const raw = new Uint8Array(reader.result);
     const size = (raw.length + 3) & ~3;
-    if (size < 8 || size > 200 * 1024) {
+    if (size < 8 || size > FIRMWARE_MAX) {
       otaImage = null;
       otaName.value = "";
       otaPhase.value = "";
-      otaNote.value = "文件不能超过 200 KB";
+      otaFileLayout.value = 0;
+      otaNote.value = "文件不能超过 240 KB";
       return;
     }
     const image = new Uint8Array(size);
     image.set(raw);
     for (let i = raw.length; i < size; i++) image[i] = 0xFF;
-    if (!firmwareLooksValid(image)) {
+    const layout = firmwareLayout(image);
+    if (!layout) {
       otaImage = null;
       otaName.value = file.name;
       otaSize.value = raw.length;
       otaCrc.value = "";
       otaPhase.value = "";
+      otaFileLayout.value = 0;
       otaNote.value = "这个文件不是本充电桩的应用固件";
       return;
     }
     otaImage = image;
+    otaFileLayout.value = layout;
     otaName.value = file.name;
     otaSize.value = image.length;
     otaFileVer.value = firmwareVersion(image);
@@ -3313,6 +3541,15 @@ async function beginUpgrade() {
     if (line) {
       primed = true;
       quietFrom(line);
+      /* 3.0.0：桩报自己的分区布局（没有那一段就是老分区 L1）。和文件对不上就不发，
+       * 放开桩的升级准备，原来的程序照常跑。 */
+      const mismatch = layoutMismatchNote(otaFileLayout.value, pileLayoutFrom(line));
+      if (mismatch) {
+        send("OTAABORT");
+        otaPhase.value = "mismatch";
+        otaNote.value = mismatch;
+        return;
+      }
     }
     if (chargeQuiet.value && wifiQuiet.value && ocppQuiet.value) {
       otaPhase.value = "ready";
@@ -3463,6 +3700,15 @@ function applyLine(line) {
     else if (got.kind === "get" && got.theme !== null && !scrThemeSaving.value) {
       scrTheme.value = got.theme;
       scrThemeKnown.value = true;
+    }
+    return;
+  }
+  if (parsePhaseLine(line) !== null) {
+    const got = parsePhaseLine(line);
+    if (typeof scrWait === "function") scrWait(line);
+    else if (got.kind === "get" && !phaseSaving.value) {
+      phaseNow.value = got.phase;
+      phaseKnown.value = true;
     }
     return;
   }
@@ -3730,6 +3976,10 @@ function handle(msg) {
   }
   if (msg.t === "scan") {
     scanning.value = !!msg.on;
+    return;
+  }
+  if (msg.t === "export") {
+    exportDone(msg);
     return;
   }
   if (msg.t === "line") applyLine(msg.s || "");

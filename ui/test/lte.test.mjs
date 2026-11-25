@@ -644,10 +644,10 @@ test("App.vue：4G 入口在 WiFi 配网下面；4G 页、互斥提示、首页�
   assert.match(script, /if \(line\.indexOf\("WCFG "\) === 0\) \{[\s\S]*?lteHome\.value = null;[\s\S]*?applyWifiConfig/);
 });
 
-test("版本号 2800", () => {
+test("版本号 3000", () => {
   const manifest = read("../AndroidManifest.xml");
-  assert.match(manifest, /android:versionCode="2800"/);
-  assert.match(manifest, /android:versionName="2\.8\.0"/);
+  assert.match(manifest, /android:versionCode="3000"/);
+  assert.match(manifest, /android:versionName="3\.0\.0"/);
 });
 
 /* 一键配置：带 APN（Protocol、APN、账号、密码），不带 4G 开关。 */
@@ -678,13 +678,29 @@ function runSteps(pile, plan, body) {
   return true;
 }
 
-test("一键配置：有 4G APN 这一项，没有 4G 开关", () => {
+/* 2.8.0：4G 开关也进了一键配置，但下发时默认不发，要在下发确认里勾选「同时下发 4G 开关」。 */
+test("一键配置：有 4G APN 这一项；4G 开关备份时读下来，下发默认不发", () => {
   const section = SECTIONS.find((item) => item.key === "apn");
   assert.ok(section && section.name === "4G APN");
-  assert.equal(SECTIONS[SECTIONS.length - 1].key, "apn");
-  const profile = read("src/profile.js");
-  assert.ok(!/LTESET|LTEGET/.test(profile));
+  assert.deepEqual(section.since, [2, 6, 16]);
+  const sw = SECTIONS.find((item) => item.key === "lte");
+  assert.ok(sw && sw.needs === "withLte");
+  assert.deepEqual(sw.since, [2, 6, 16]);
+  /* 先定链路（WiFi、4G），再写 OCPP 开关：两条链路都关时桩会连带关 OCPP。 */
+  const keys = SECTIONS.map((item) => item.key);
+  assert.ok(keys.indexOf("net") < keys.indexOf("lte") && keys.indexOf("lte") < keys.indexOf("ocpp"));
+  assert.equal(sectionSkip(sw, "read", "2.6.16", blankBody()), "");
+  assert.equal(sectionSkip(sw, "write", "2.6.16", { lte: true }), "没有勾选，不下发");
+  assert.equal(sectionSkip(sw, "write", "2.6.16", { lte: true }, { withLte: false }), "没有勾选，不下发");
+  assert.equal(sectionSkip(sw, "write", "2.6.16", { lte: true }, { withLte: true }), "");
+  assert.equal(sectionSkip(sw, "write", "2.6.16", blankBody(), { withLte: true }), "这份配置里没有这一项");
+  assert.equal(sectionSkip(sw, "write", "2.6.15", { lte: true }, { withLte: true }), "固件不支持");
+  assert.equal(readPlan("lte").list[0].command, "LTEGET");
+  assert.equal(writePlan("lte", { lte: true }).list[0].command, "LTESET\t1");
+  assert.equal(writePlan("lte", { lte: false }).list[0].command, "LTESET\t0");
+  assert.ok(writePlan("lte", blankBody()).error);
   assert.equal(blankBody().apn, null);
+  assert.equal(blankBody().lte, null);
 });
 
 test("一键配置：从 2.6.16 的桩读 APN，下发到另一台，读回一致", () => {
@@ -721,8 +737,8 @@ test("一键配置：旧固件的桩、旧备份都跳过 4G APN，不算失败�
   assert.equal(sectionSkip(section, "write", "2.6.16", blankBody()), "这份配置里没有这一项");
   assert.equal(sectionSkip(section, "write", "2.6.16", {}), "这份配置里没有这一项");
   assert.equal(sectionSkip(section, "read", "2.6.16", blankBody()), "");
-  /* 别的项不受影响：哪个版本都不跳过。 */
-  for (const other of SECTIONS.filter((item) => item.key !== "apn")) {
+  /* 原来的 11 项不受影响：哪个版本都不跳过（后加的几项有自己的 since / optional，见 profile.test.mjs）。 */
+  for (const other of SECTIONS.filter((item) => !item.since && !item.optional)) {
     assert.equal(sectionSkip(other, "read", "", blankBody()), "", other.key);
     assert.equal(sectionSkip(other, "write", "2.5.6", blankBody()), "", other.key);
   }
@@ -732,7 +748,7 @@ test("一键配置：旧固件的桩、旧备份都跳过 4G APN，不算失败�
   assert.ok(writePlan("apn", { apn: { proto: 3, apn: "a", user: "", pass: "" } }).error);
   /* App.vue 的循环用的就是这个函数；跳过的那一行、跳过的原因 12 种语言都有。 */
   const vue = read("src/App.vue");
-  assert.match(vue, /const skip = sectionSkip\(section, mode, fw\.value === "—" \? "" : fw\.value, body\);/);
+  assert.match(vue, /const skip = sectionSkip\(section, mode, fw\.value === "—" \? "" : fw\.value, body, opts\);/);
   for (const item of languages) {
     if (item.id === "zh") continue;
     for (const key of ["{name}已跳过：{reason}", "固件不支持", "这份配置里没有这一项"]) {

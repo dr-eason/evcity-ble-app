@@ -54,7 +54,7 @@ export function langReturn(from, linked) {
 export const SETTINGS_GROUPS = [
   { title: "充电设置", items: ["openImax", "page = 'plug'", "openCards", "openNetStop", "openOrders"] },
   { title: "网络与平台", items: ["openWifi", "openLte", "openOcpp", "openOcfw"] },
-  { title: "保护与屏幕", items: ["openCfg", "openTz", "openScrLang", "openScrTheme", "openQr"] },
+  { title: "保护与屏幕", items: ["openCfg", "openPhase", "openTz", "openScrLang", "openScrTheme", "openQr"] },
   { title: "维护", items: ["openProfiles", "openOta", "openModver", "openTelemetry", "openReboot"] },
   { title: "关于", items: ["openAuthInfo", "openPrivacy('menu')"] },
 ];
