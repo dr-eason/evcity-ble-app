@@ -14,7 +14,7 @@ import {
   lteSetCommand, lteSignalText, lteSimLabel, lteStateLabel, lteSupported, lteTextOk, parseApn, parseLteAck,
   parseLteBrief, parseLteCell, parseLteStat, parseLteSwitch, pollLteStat, readApn, readLte, rereadSwitches, sendLteSet,
 } from "../src/lte.js";
-import { SECTIONS, blankBody, readPlan, sameSection, sectionSkip, writePlan } from "../src/profile.js";
+import { SECTIONS, blankBody, defaultWithLte, readPlan, sameSection, sectionSkip, writePlan } from "../src/profile.js";
 import { languages, translate } from "../src/i18n.js";
 import { ltePacks } from "../src/packs-lte.js";
 import { wifiStatusText } from "../src/wifi-rssi.js";
@@ -644,10 +644,10 @@ test("App.vue：4G 入口在 WiFi 配网下面；4G 页、互斥提示、首页�
   assert.match(script, /if \(line\.indexOf\("WCFG "\) === 0\) \{[\s\S]*?lteHome\.value = null;[\s\S]*?applyWifiConfig/);
 });
 
-test("版本号 3000", () => {
+test("版本号 3001", () => {
   const manifest = read("../AndroidManifest.xml");
-  assert.match(manifest, /android:versionCode="3000"/);
-  assert.match(manifest, /android:versionName="3\.0\.0"/);
+  assert.match(manifest, /android:versionCode="3001"/);
+  assert.match(manifest, /android:versionName="3\.0\.1"/);
 });
 
 /* 一键配置：带 APN（Protocol、APN、账号、密码），不带 4G 开关。 */
@@ -678,17 +678,24 @@ function runSteps(pile, plan, body) {
   return true;
 }
 
-/* 2.8.0：4G 开关也进了一键配置，但下发时默认不发，要在下发确认里勾选「同时下发 4G 开关」。 */
-test("一键配置：有 4G APN 这一项；4G 开关备份时读下来，下发默认不发", () => {
+/* 2.8.0：4G 开关也进了一键配置，下发时要在下发确认里勾选「同时下发 4G 开关」才发。
+ * 3.0.0：备份里 4G 开着时这个勾默认勾上（defaultWithLte），关着时默认不勾。 */
+test("一键配置：有 4G APN 这一项；4G 开关备份时读下来，4G 开的备份默认下发、关的默认不发", () => {
   const section = SECTIONS.find((item) => item.key === "apn");
   assert.ok(section && section.name === "4G APN");
   assert.deepEqual(section.since, [2, 6, 16]);
   const sw = SECTIONS.find((item) => item.key === "lte");
   assert.ok(sw && sw.needs === "withLte");
   assert.deepEqual(sw.since, [2, 6, 16]);
-  /* 先定链路（WiFi、4G），再写 OCPP 开关：两条链路都关时桩会连带关 OCPP。 */
+  /* 先定链路（WiFi、4G），再写 OCPP 开关：两条链路都关时桩会连带关 OCPP。
+   * APN 在 4G 开关前面：先存好 APN 再开 4G，模组第一次拨号就用备份里的 APN。 */
   const keys = SECTIONS.map((item) => item.key);
-  assert.ok(keys.indexOf("net") < keys.indexOf("lte") && keys.indexOf("lte") < keys.indexOf("ocpp"));
+  assert.ok(keys.indexOf("net") < keys.indexOf("apn") && keys.indexOf("apn") < keys.indexOf("lte") &&
+    keys.indexOf("lte") < keys.indexOf("ocpp"));
+  assert.equal(defaultWithLte({ lte: true }), true);
+  assert.equal(defaultWithLte({ lte: false }), false);
+  assert.equal(defaultWithLte(blankBody()), false);
+  assert.equal(defaultWithLte({}), false);
   assert.equal(sectionSkip(sw, "read", "2.6.16", blankBody()), "");
   assert.equal(sectionSkip(sw, "write", "2.6.16", { lte: true }), "没有勾选，不下发");
   assert.equal(sectionSkip(sw, "write", "2.6.16", { lte: true }, { withLte: false }), "没有勾选，不下发");

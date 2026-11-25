@@ -9,6 +9,7 @@ import { scrLangPacks } from "./packs-scrlang.js";
 import { scrThemePacks } from "./packs-scrtheme.js";
 import { layoutPacks } from "./packs-layout.js";
 import { phasePacks } from "./packs-phase.js";
+import { gbStopPacks } from "./packs-gbstop.js";
 
 const en = {
   "返回": "Back",
@@ -847,6 +848,8 @@ Object.keys(scrThemePacks).forEach((lang) => { if (packs[lang]) Object.assign(pa
 Object.keys(layoutPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], layoutPacks[lang]); });
 /* 相位设置（PHASEGET / PHASESET）和一键配置新增的提示（跳过、导出导入、4G 开关）：packs-phase.js。 */
 Object.keys(phasePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], phasePacks[lang]); });
+/* 新国标 6 秒停充（GBSTOPGET / GBSTOPSET、首页停止按钮的提示）：packs-gbstop.js。 */
+Object.keys(gbStopPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], gbStopPacks[lang]); });
 
 export function translate(lang, text, vars) {
   const key = text == null ? "" : String(text);

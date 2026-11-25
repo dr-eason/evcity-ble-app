@@ -26,15 +26,27 @@ function oneHtml() {
   };
 }
 
-/* 设置 → 关于里显示的 App 版本，取 AndroidManifest.xml 的 versionName（iOS 用同一份界面）。 */
-function appVersion() {
+/* 编译时的 App 版本（__APP_VERSION__）。界面优先用原生壳运行时给的版本（src/app-version.js），
+ * 这个只在原生壳没给时兜底。先取 AndroidManifest.xml 的 versionName；没有（公开仓 evcity-ble-app
+ * 里只有 ui/ 和 ios/）再取 iOS 的 Config/Base.xcconfig 的 EVC_VERSION：
+ *   AC-V2：  ui 的上一级是 ble-finder/，iOS 在 ../../ble-ios/
+ *   公开仓： ui 的上一级是仓库根，iOS 在 ../ios/ */
+function readText(path) {
   try {
-    const manifest = readFileSync(resolve("../AndroidManifest.xml"), "utf8");
-    const m = manifest.match(/android:versionName="([^"]+)"/);
-    return m ? m[1] : "";
+    return readFileSync(resolve(path), "utf8");
   } catch (e) {
     return "";
   }
+}
+
+function appVersion() {
+  const manifest = readText("../AndroidManifest.xml").match(/android:versionName="([^"]+)"/);
+  if (manifest) return manifest[1];
+  for (const path of ["../ios/Config/Base.xcconfig", "../../ble-ios/Config/Base.xcconfig"]) {
+    const m = readText(path).match(/^\s*EVC_VERSION\s*=\s*([^\s/]+)/m);
+    if (m) return m[1];
+  }
+  return "";
 }
 
 export default defineConfig({

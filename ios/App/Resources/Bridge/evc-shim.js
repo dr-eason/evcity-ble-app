@@ -2,12 +2,13 @@
  * 返回值都照 MainActivity.java 的 Bridge 来，所以 Vue 界面一行不用改。
  *
  * 原生在页面开始加载前注入三段，顺序是：
- *   1. window.__evcInit = { locale, gate, mock, nativeFilePicker };
+ *   1. window.__evcInit = { locale, gate, mock, nativeFilePicker, appVersion, appBuild };
  *   2. 本文件；
  *   3. mock-evc.js（只在 Mock BLE 模式）。
  *
- * WKWebView 的 postMessage 是异步的，没有返回值。三个要同步返回的方法这样做：
+ * WKWebView 的 postMessage 是异步的，没有返回值。要同步返回的方法这样做：
  *   locale()   → 加载页面时原生写进 __evcInit 的系统语言；
+ *   appVersion() / appBuild() → 原生写进 __evcInit 的 Bundle 版本号和构建号（Android 读 PackageInfo）；
  *   loadGate() → 加载页面时原生把存着的密码表整张写进 __evcInit.gate，saveGate 同时改这张表和原生；
  *   mtu()      → 原生每次协商出新值就调 __evcNative.setMtu()。 */
 (function () {
@@ -72,6 +73,8 @@
       return typeof pin === "string" ? pin : "";
     },
     locale: function () { return typeof init.locale === "string" ? init.locale : ""; },
+    appVersion: function () { return typeof init.appVersion === "string" ? init.appVersion : ""; },
+    appBuild: function () { return typeof init.appBuild === "string" ? init.appBuild : ""; },
     mtu: function () { return mockLink ? mockLink.mtu() : mtu; },
     linkFast: function (on) { ble("linkFast", [!!on]); },
     heartbeatTime: function (on) { ble("heartbeatTime", [!!on]); },

@@ -15,7 +15,7 @@
     { name: "EVC-AC06-0002", addr: "5A1C0002-7E57-4AC6-9F00-000000000002", rssi: -63 },
     { name: "EVC-AC06-0003", addr: "5A1C0003-7E57-4AC6-9F00-000000000003", rssi: -79 }
   ];
-  var FW = "3.0.0";
+  var FW = "3.0.1";
 
   var queue = [];
   var draining = false;
@@ -58,7 +58,7 @@
     return {
       state: "CONNECTED", stop: "NONE", seconds: 0, wh: 0,
       wifiOn: true, ssid: "EVCITY-Office", ocppOn: false, ocppUrl: "",
-      tel: false, lte: false, plug: false, imax: 32, phase: true, tz: 480,
+      tel: false, lte: false, plug: false, gbStop: false, stopUntil: 0, imax: 32, phase: true, tz: 480,
       sched: { mode: 0, hour: 22, minute: 0, armed: 0 },
       netStop: { on: false, sec: 60 },
       qr: { on: false, text: "" }, ocfw: { on: false, text: "" },
@@ -106,7 +106,16 @@
     var ssid = pile.ssid || "-";
     var lines = [];
     lines.push(pile.lte ? "ACK LTEB UP\t-85\tMOCK_NET" : "WCFG " + wifi + " " + ssid);
-    lines.push("LIVE 0.4 " + (charging ? "6.02" : "9.01") + " " + (pile.wifiOn ? "-52" : "-"));
+    /* 新国标 6 秒停充：设置、正在等车、离强制断开还剩多少毫秒（固件 wb2.c 的 LIVE 行）。
+     * 假桩的车不理方波：等满 6 秒才停下来。 */
+    var left = pile.stopUntil ? pile.stopUntil - Date.now() : 0;
+    if (pile.stopUntil && left <= 0) {
+      pile.stopUntil = 0;
+      pile.state = "FINISHED"; pile.stop = "BLE";
+      charging = false; amps = "0.00 0.00 0.00"; power = "PW0";
+    }
+    lines.push("LIVE 0.4 " + (charging ? "6.02" : "9.01") + " " + (pile.wifiOn ? "-52" : "-") + " " +
+      (pile.gbStop ? "1" : "0") + " " + (left > 0 ? "1 " + Math.round(left) : "0 0"));
     lines.push("FLT NONE");
     lines.push("STAT " + pile.state + " NONE " + pile.seconds + " 229.8 230.4 231.1 " + amps + " " +
       pile.stop + " " + wifi + " " + (pile.ocppOn && pile.ocppUrl ? "BUSY" : "OFF") + " 0 " +
@@ -179,10 +188,14 @@
       case "STATUS": return statLines();
       case "AUTH": return [/^\d{6}$/.test(arg[0] || "") && arg[0] !== "000000" ? "ACK AUTH OK" : "ACK AUTH FAIL"];
       case "START":
+        if (pile.stopUntil) return ["ACK START REJECTED"];      /* 正在等车停：不受理 */
         pile.state = "CHARGING"; pile.stop = "NONE"; pile.seconds = 0; pile.wh = 0;
         return ["ACK START OK"];
       case "STOP":
-        if (pile.state === "CHARGING") { pile.state = "FINISHED"; pile.stop = "BLE"; }
+        if (pile.state === "CHARGING" && pile.gbStop) {
+          if (!pile.stopUntil) pile.stopUntil = Date.now() + 6000;    /* 再点不重新计时 */
+        }
+        else if (pile.state === "CHARGING") { pile.state = "FINISHED"; pile.stop = "BLE"; }
         return ["ACK STOP OK"];
       case "WCFGGET": return ["WCFG " + (pile.wifiOn ? "UP" : "DOWN") + " " + (pile.ssid || "-")];
       case "WSCAN":
@@ -216,6 +229,11 @@
         return ["ACK IMAXSET OK"];
       case "PLUGGET": return ["ACK PLUGGET " + (pile.plug ? "1" : "0")];
       case "PLUGSET": pile.plug = arg[0] === "1"; return ["ACK PLUGSET OK"];
+      case "GBSTOPGET": return ["ACK GBSTOPGET " + (pile.gbStop ? "1" : "0")];
+      case "GBSTOPSET":
+        if (arg[0] !== "0" && arg[0] !== "1") return ["ACK GBSTOPSET FAIL"];
+        pile.gbStop = arg[0] === "1";
+        return ["ACK GBSTOPSET OK"];
       case "TELGET": return ["TEL " + (pile.tel ? "1" : "0")];
       case "TELSET": pile.tel = arg[0] === "1"; return ["ACK TELSET OK"];
       case "WIFISWGET": return ["WIFISW " + (pile.wifiOn ? "1" : "0")];

@@ -3,6 +3,7 @@ import { SCREEN_LANGS, parseScrLangAck } from "./scrlang.js";
 import { SCREEN_THEMES, parseScrThemeAck } from "./scrtheme.js";
 import { PHASE_BUSY_REASON, parsePhaseLine } from "./phase.js";
 import { parseLteSwitch } from "./lte.js";
+import { parseGbStopLine } from "./gbstop.js";
 
 /* 每一组。下发按这个顺序：
  *   since     桩的固件从这个版本起才有这组命令；更旧（或者版本读不出）的桩上读取、下发都跳过。
@@ -14,6 +15,10 @@ export const SECTIONS = [
   { key: "safety", name: "安全管理参数" },
   { key: "imax", name: "最大电流" },
   { key: "plug", name: "即插即充" },
+  /* 新国标 6 秒停充（GBSTOPGET / GBSTOPSET，gbstop.js）。这一版固件加的，版本号没有变（还是
+   * 3.0.0），所以不能只按版本判断：更早的 3.0.0 对这两条命令一声不吭，按“固件还不支持”跳过
+   * （quiet）。旧 App 存的备份里没有这一项，下发时跳过（optional）。 */
+  { key: "gbstop", name: "新国标6秒停充", since: [3, 0, 0], optional: true, quiet: true },
   { key: "cards", name: "本地IC卡" },
   { key: "sched", name: "预约充电" },
   { key: "qr", name: "屏幕二维码" },
@@ -21,14 +26,17 @@ export const SECTIONS = [
   { key: "tel", name: "遥测" },
   { key: "netstop", name: "断网停充" },
   { key: "net", name: "网络设置" },
-  /* 4G 开关（固件 2.6.16 起）。备份时读下来，下发时默认不发：开关和 WiFi、遥测互斥，照着
-   * 备份去拨会把目标桩正在用的那条链路关掉。只有下发确认里勾选了「同时下发 4G 开关」才发。
+  /* 4G 的 APN（固件 2.6.16 起）：Protocol、APN、账号、密码。放在 4G 开关前面：4G 还关着时
+   * 写 APN 只是存下来，接着打开 4G，模组第一次拨号用的就是备份里的 APN（4G 本来就开着时
+   * 固件在 APN 变了时自己让模组重拨，见 wb2.c 的 APNSET）。 */
+  { key: "apn", name: "4G APN", since: [2, 6, 16], optional: true },
+  /* 4G 开关（固件 2.6.16 起）。只有下发确认里勾选了「同时下发 4G 开关」才发；备份里 4G 是
+   * 开着的（用 4G 联网的桩）时这个勾默认勾上（defaultWithLte），关着时默认不勾：开关和
+   * WiFi、遥测互斥，照着备份去关 4G 会把目标桩正在用的那条链路断掉。
    * 放在 WiFi 后面、OCPP 前面：WiFi 和 4G 都关掉时桩会连带关 OCPP，先把链路定下来，再写
    * OCPP 开关，读回核对才对得上。 */
   { key: "lte", name: "4G 开关", since: [2, 6, 16], optional: true, needs: "withLte" },
   { key: "ocpp", name: "OCPP设置" },
-  /* 4G 的 APN（固件 2.6.16 起）：Protocol、APN、账号、密码。 */
-  { key: "apn", name: "4G APN", since: [2, 6, 16], optional: true },
   /* 屏幕语言、屏幕颜色（固件 2.8.0 起）。 */
   { key: "scrlang", name: "屏幕语言", since: [2, 8, 0], optional: true, quiet: true },
   { key: "scrtheme", name: "屏幕颜色", since: [2, 8, 0], optional: true, quiet: true },
@@ -39,7 +47,10 @@ export const SECTIONS = [
 
 /* 备份记录的格式版本。
  *   1（记录里没有 format 字段）：2.8.0 之前的 App 存的，body 是前 11 组，可能还有 apn。
- *   2：多了 lte、scrLang、scrTheme、phase（桩不支持时是 null），记录里带 format: 2。 */
+ *   2：多了 lte、scrLang、scrTheme、phase（桩不支持时是 null），记录里带 format: 2。
+ * 后来又多了 gbStop（新国标 6 秒停充，true / false，桩不支持时是 null）。它是可有可无的一项，
+ * 格式号没有加：没有这一项的旧备份照样能导入、下发（跳过这一项）；带这一项的备份拿到旧 App 上
+ * 也能导入（旧 App 不认识这个字段，不下发它）。 */
 export const PROFILE_FORMAT = 2;
 export const PROFILE_MODEL = "AC06";
 /* 导出文件的标记。 */
@@ -66,8 +77,15 @@ export function hasSection(key, body) {
     case "scrlang": return validScrLang(body.scrLang);
     case "scrtheme": return validScrTheme(body.scrTheme);
     case "phase": return validPhase(body.phase);
+    case "gbstop": return typeof body.gbStop === "boolean";
     default: return body[key] !== undefined && body[key] !== null;
   }
+}
+
+/* 下发确认里「同时下发 4G 开关」默认勾不勾：备份里 4G 是开着的才默认勾上，这样用 4G 联网
+ * 的桩备份下发后和 WiFi 一样自己联网。4G 关着、或者备份里没有这一项（旧备份、旧固件）时不勾。 */
+export function defaultWithLte(body) {
+  return !!body && body.lte === true;
 }
 
 /* 这一项这次要不要跳过。要跳过返回原因（界面上写“已跳过”，不算失败），不跳过返回 ""。
@@ -142,6 +160,7 @@ export function blankBody() {
     scrLang: null,          /* 屏幕语言 0–4（scrlang.js），从 2.8.0 起的桩上读到才有 */
     scrTheme: null,         /* 屏幕颜色 0–6（scrtheme.js），从 2.8.0 起的桩上读到才有 */
     phase: null,            /* 相位 0 单相、1 三相（phase.js） */
+    gbStop: null,           /* 新国标 6 秒停充 true / false（gbstop.js），桩支持才有 */
   };
 }
 
@@ -329,6 +348,18 @@ function parsePlug(line, body) {
   const matched = /^(?:ACK PLUGGET|PLUG) ([01])$/.exec(line.trim());
   if (!matched) return false;
   body.plug = matched[1] === "1";
+  return true;
+}
+
+function acceptGbStop(line) {
+  const got = parseGbStopLine(line);
+  return got !== null && got.kind === "get";
+}
+
+function parseGbStop(line, body) {
+  const got = parseGbStopLine(line);
+  if (!got || got.kind !== "get") return false;
+  body.gbStop = got.on;
   return true;
 }
 
@@ -523,6 +554,8 @@ export function readPlan(key) {
       return { list: [readStep("IMAXGET", (line) => line.indexOf("IMAX ") === 0, parseImax)] };
     case "plug":
       return { list: [readStep("PLUGGET", acceptPlug, parsePlug)] };
+    case "gbstop":
+      return { list: [readStep("GBSTOPGET", acceptGbStop, parseGbStop)] };
     case "cards":
       return { list: [readStep("CARDGET", (line) => line.indexOf("CARD") === 0 && line.indexOf("CARDSET") < 0, parseCards)] };
     case "sched":
@@ -609,6 +642,9 @@ export function writePlan(key, body, opts) {
     case "plug":
       if (typeof body.plug !== "boolean") return { error: "这份配置里没有这一项" };
       return { list: [ackStep("PLUGSET\t" + (body.plug ? "1" : "0"), "PLUGSET")] };
+    case "gbstop":
+      if (typeof body.gbStop !== "boolean") return { error: "这份配置里没有这一项" };
+      return { list: [ackStep("GBSTOPSET\t" + (body.gbStop ? "1" : "0"), "GBSTOPSET")] };
     case "cards": {
       const cards = normalCards(body.cards);
       if (!cards) {
@@ -703,6 +739,8 @@ export function sameSection(key, want, got) {
       return Number(want.imax) === Number(got.imax);
     case "plug":
       return want.plug === got.plug;
+    case "gbstop":
+      return typeof want.gbStop === "boolean" && want.gbStop === got.gbStop;
     case "cards": {
       const a = normalCards(want.cards);
       const b = normalCards(got.cards);
@@ -807,6 +845,7 @@ export function bodyProblem(body) {
   if (!absent(body.scrLang) && !validScrLang(body.scrLang)) return sectionName("scrlang");
   if (!absent(body.scrTheme) && !validScrTheme(body.scrTheme)) return sectionName("scrtheme");
   if (!absent(body.phase) && !validPhase(body.phase)) return sectionName("phase");
+  if (!absent(body.gbStop) && typeof body.gbStop !== "boolean") return sectionName("gbstop");
   return "";
 }
 

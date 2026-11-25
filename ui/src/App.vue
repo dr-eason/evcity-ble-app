@@ -79,8 +79,9 @@
       </div>
       <div class="pair">
         <button class="go" @click="send('START')">{{ t('启动') }}</button>
-        <button class="ghost" @click="send('STOP')">{{ t('停止') }}</button>
+        <button class="ghost" :disabled="stopBtn.disabled" @click="tapStop">{{ t('停止') }}<template v-if="stopBtn.disabled"> ({{ stopBtn.seconds }} s)</template></button>
       </div>
+      <p v-if="stopBtn.disabled" class="note">{{ t('等待车端关闭，请勿重复点击停止') }}</p>
       <div class="linkbox">
         <small>{{ lteHome ? t('4G 网络') : t('已配置热点') }}</small>
         <strong>{{ lteHome ? (lteHome.oper || '--') : t(wifiSaved) }}</strong>
@@ -93,6 +94,7 @@
       </button>
       <p class="note">{{ t(note) }}</p>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
+      <p class="appver">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi></p>
     </section>
 
     <section v-else-if="page === 'gate'" class="body">
@@ -130,6 +132,10 @@
         <button class="card device" @click="page = 'plug'">
           <span><strong>{{ t('即插即充') }}</strong><small>{{ plugDip ? t('拨码2 强制打开') : t('插枪后自动开始') }}</small></span>
           <em>{{ plugDip ? t('拨码开') : (plug ? t('开') : t('关')) }}</em>
+        </button>
+        <button class="card device" @click="openGbStop">
+          <span><strong>{{ t('新国标6秒停充') }}</strong><small>{{ t('停止时先通知车辆，最多等 6 秒再断开') }}</small></span>
+          <em>{{ gbStopKnown ? (gbStopOn ? t('开') : t('关')) : '›' }}</em>
         </button>
         <button class="card device" @click="openCards">
           <span><strong>{{ t('本地IC卡') }}</strong><small>{{ t('白名单里的卡直接刷卡启动和停止') }}</small></span>
@@ -225,7 +231,7 @@
         </button>
         <div class="card device">
           <span><strong>{{ t('App 版本') }}</strong></span>
-          <em class="ver">{{ appVersion ? verLabel(appVersion) : '—' }}</em>
+          <em class="ver">{{ appVersionLong }}</em>
         </div>
       </div>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
@@ -261,7 +267,8 @@
         <label v-if="profileAskId === item.id && hasSection('lte', item.body)" class="row">
           <span>
             <strong>{{ t('同时下发 4G 开关') }}</strong>
-            <small>{{ t('默认不下发。勾选后按这份配置打开或关闭 4G，可能会断开这台充电桩正在用的 WiFi 或 4G 连接。') }}</small>
+            <small v-if="defaultWithLte(item.body)">{{ t('这份配置来自用 4G 联网的充电桩，默认一起下发：打开 4G（会关掉 WiFi），按配置里的 APN 联网。不勾就不改 4G 开关，下发后这台充电桩可能连不上网。') }}</small>
+            <small v-else>{{ t('默认不下发。勾选后按这份配置打开或关闭 4G，可能会断开这台充电桩正在用的 WiFi 或 4G 连接。') }}</small>
           </span>
           <input v-model="profileWithLte" type="checkbox">
         </label>
@@ -585,6 +592,19 @@
       <p class="note">{{ t('密码、设置、键盘、时区、4G 和升级页不换颜色。充电桩的屏幕文件是旧版本时屏幕不会变色，颜色先存着，重新烧录屏幕文件后生效。') }}</p>
     </section>
 
+    <section v-else-if="page === 'gbstop'" class="body">
+      <label class="card toggle">
+        <span>
+          <strong>{{ t('开启新国标6秒停充') }}</strong>
+          <small>{{ t('停止时先通知车辆，最多等 6 秒再断开') }}</small>
+        </span>
+        <input type="checkbox" :checked="gbStopOn" :disabled="gbStopSaving || gbStopState !== 'ok'"
+               @change="setGbStop($event.target.checked)">
+      </label>
+      <p v-if="gbStopNote" class="note">{{ t(gbStopNote) }}</p>
+      <p class="note">{{ t('打开后，停止充电时充电桩先通知车辆，等车辆停止取电再断开继电器，最多等 6 秒；车辆提前停下来就提前断开。关闭时（默认）一停止就立即断开。出现安全故障或拔枪时始终立即断开。断电后仍然有效。') }}</p>
+    </section>
+
     <section v-else-if="page === 'phase'" class="body">
       <p class="note">{{ t('点单相或三相，直接保存到充电桩，断电后仍然有效。和充电桩屏幕设置第 3 页的 Power Model 是同一个设置。') }}</p>
       <div class="card">
@@ -724,11 +744,16 @@ import { heartbeatCarriesTime, parseTimeAck, phoneTzMinutes, runTimeSync, zoneRe
 import { AUTH_LOCK_SECONDS, authDecide, commandName, isOtaCommand, lockLeft, lockNote, parseAuthLine, pinOk, queueRefused, resendable } from "./auth.js";
 import { TABS, isTabPage, langReturn, rootBack, subpageBack, tabBarShown, tabTitle } from "./tabs.js";
 import {
-  CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, IMPORT_MAX_BYTES, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, exportFileName,
+  CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, IMPORT_MAX_BYTES, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, defaultWithLte, exportFileName,
   exportText, hasSection, importText, makeProfile, ocppUrlOk, quietSkip, readPlan, sameSection, sectionSkip, splitCardLine,
   storedProfileOk, voltageLimitError, writePlan,
 } from "./profile.js";
 import { PHASES, parsePhaseLine, phaseName, readPhase, savePhase } from "./phase.js";
+import {
+  gbChargingState, liveGbStop, newStopGuard, parseGbStopLine, readGbStop, resetStopGuard, saveGbStop,
+  stopLive, stopState, stopTap, stopView,
+} from "./gbstop.js";
+import { appVersionFull, appVersionLabel, resolveAppVersion } from "./app-version.js";
 
 const langIds = languages.map((item) => item.id);
 function savedLang() {
@@ -921,7 +946,8 @@ const profilePercent = ref(0);
 const profileFinished = ref(false);
 const profileDoneNote = ref("");
 let profileRunId = 0;
-/* 下发确认里的「同时下发 4G 开关」，每次打开确认都回到不勾。 */
+/* 下发确认里的「同时下发 4G 开关」。每次打开确认都回到默认值：备份里 4G 开着时勾上，
+ * 关着时不勾（defaultWithLte）。 */
 const profileWithLte = ref(false);
 /* 导出 / 导入（2.8.0）。 */
 const exportAsk = ref(false);
@@ -976,6 +1002,7 @@ const pageTitle = computed(() => {
   if (page.value === "scrlang") return "屏幕语言";
   if (page.value === "scrtheme") return "屏幕颜色";
   if (page.value === "phase") return "相位";
+  if (page.value === "gbstop") return "新国标6秒停充";
   if (page.value === "netstop") return "断网停充";
   if (page.value === "reboot") return "重启";
   if (page.value === "profiles") return "一键配置";
@@ -1455,8 +1482,12 @@ function openPrivacy(from) {
   if (page.value === "menu") menuPull++;
   page.value = "privacy";
 }
-/* 设置 → 关于里显示的 App 版本：编译时从 AndroidManifest.xml 的 versionName 取（vite.config.js）。 */
-const appVersion = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
+/* App 版本（首页底部、设置 → 关于）：先问原生壳（Android PackageInfo / iOS Bundle），老的壳没有
+ * appVersion() 时用编译时的 __APP_VERSION__（vite.config.js），都没有显示 "—"。见 app-version.js。
+ * 装好以后版本不会变，页面启动时问一次就够。 */
+const appVersionInfo = resolveAppVersion(bridge(), typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "");
+const appVersionShort = appVersionLabel(appVersionInfo);
+const appVersionLong = appVersionFull(appVersionInfo);
 /* 蓝牙/WiFi 模组版本（固件 2.6.12 起，命令和格式见 modver.js）。一次连接读到之后留着，
  * 菜单再打开不重读；没读到（旧固件、模组没回答）时每次打开菜单再试，版本页上可以手动重读。 */
 const modverState = ref("idle");      /* idle / asking / ok / unsupported / empty */
@@ -2061,6 +2092,89 @@ async function pickScrTheme(id) {
   else if (result.state === "silent") scrThemeNote.value = "充电桩没有应答，没有保存";
   else scrThemeNote.value = "没有保存";
 }
+/* 新国标 6 秒停充（命令和规矩见 gbstop.js）。
+ * 设置页和相位同一种做法：进页面读一次 GBSTOPGET；点开关就存：GBSTOPSET，再 GBSTOPGET 读回来
+ * 确认，等应答用屏幕语言那一个 scrWait。桩每秒的 LIVE 行里也带着这个设置，菜单上的字跟着它走。
+ * 首页的停止按钮：设置开着、正在充电时点了停止，按钮置灰并倒计时 6 秒，这期间再点不发；
+ * 桩报继电器已经断开（LIVE 行里“正在等车”回到 0）就提前放开。设置关着时和以前一样。 */
+const gbStopOn = ref(false);
+const gbStopKnown = ref(false);
+const gbStopState = ref("idle");        /* idle / reading / ok / silent */
+const gbStopSaving = ref(false);
+const gbStopNote = ref("");
+let gbStopRun = 0;
+const stopGuard = newStopGuard();
+const stopNow = ref(Date.now());
+const stopVer = ref(0);
+let chargeToken = "";
+const stopBtn = computed(() => (stopVer.value, stopView(stopGuard, stopNow.value)));
+function stopRefresh(now) {
+  stopNow.value = now;
+  stopVer.value += 1;
+}
+/* 倒计时每 250 ms 走一下；没有在等的时候什么都不做。 */
+setInterval(() => {
+  if (stopGuard.until) {
+    const now = Date.now();
+    if (!stopView(stopGuard, now).disabled) resetStopGuard(stopGuard);
+    stopRefresh(now);
+  }
+}, 250);
+function tapStop() {
+  const now = Date.now();
+  if (!stopTap(stopGuard, now, { gbOn: gbStopOn.value, charging: gbChargingState(chargeToken) })) return;
+  stopRefresh(now);
+  send("STOP");
+}
+function resetGbStop() {
+  gbStopRun += 1;
+  if (typeof scrWait === "function") scrWait = null;
+  gbStopSaving.value = false;
+  gbStopNote.value = "";
+}
+async function openGbStop() {
+  if (!linkReady.value) return;
+  resetGbStop();
+  page.value = "gbstop";
+  const token = gbStopRun;
+  const alive = () => token === gbStopRun && linkReady.value && page.value === "gbstop";
+  gbStopState.value = "reading";
+  gbStopNote.value = "正在读取";
+  const result = await readGbStop({ ask: askScr, alive });
+  if (token !== gbStopRun || result.state === "gone") return;
+  if (result.state === "ok") {
+    gbStopOn.value = result.on;
+    gbStopKnown.value = true;
+    gbStopState.value = "ok";
+    gbStopNote.value = "";
+  }
+  else {
+    gbStopState.value = "silent";
+    gbStopNote.value = "充电桩没有应答。充电桩固件可能还不支持这个设置，需要升级后再设置";
+  }
+}
+async function setGbStop(on) {
+  if (gbStopSaving.value || gbStopState.value !== "ok") return;
+  const token = ++gbStopRun;
+  const alive = () => token === gbStopRun && linkReady.value && page.value === "gbstop";
+  const before = gbStopOn.value;
+  gbStopSaving.value = true;
+  gbStopOn.value = !!on;
+  gbStopNote.value = "正在保存";
+  const result = await saveGbStop({ ask: askScr, alive, on: !!on });
+  if (token !== gbStopRun) return;
+  gbStopSaving.value = false;
+  if (result.state === "gone") {
+    gbStopOn.value = before;
+    gbStopNote.value = "";
+    return;
+  }
+  gbStopOn.value = typeof result.on === "boolean" ? result.on : before;
+  if (result.state === "ok") gbStopNote.value = "已保存，断电后仍然有效";
+  else if (result.state === "silent") gbStopNote.value = "充电桩没有应答，没有保存";
+  else gbStopNote.value = "没有保存";
+}
+
 /* 相位（命令见 phase.js）。和屏幕语言同一种做法：进页面读一次 PHASEGET；点一种就存：
  * PHASESET，再 PHASEGET 读回来确认。等应答也用屏幕语言那一个 scrWait（几页不会同时开着）。 */
 const phaseNow = ref(0);
@@ -2273,7 +2387,7 @@ function askApply(item) {
   profileDeleteId.value = "";
   exportAsk.value = false;
   profileFileNote.value = "";
-  profileWithLte.value = false;
+  profileWithLte.value = defaultWithLte(item.body);
   profileAskId.value = item.id;
 }
 function askDelete(item) {
@@ -2631,6 +2745,13 @@ function resetCharge() {
   resetPhase();
   phaseKnown.value = false;
   phaseState.value = "idle";
+  resetGbStop();
+  gbStopKnown.value = false;
+  gbStopOn.value = false;
+  gbStopState.value = "idle";
+  resetStopGuard(stopGuard);
+  chargeToken = "";
+  stopRefresh(Date.now());
   wifiSaved.value = "未配置热点";
   plug.value = false;
   plugDip.value = false;
@@ -2920,6 +3041,10 @@ function applyStat(line) {
   const base = faultFirst ? 3 : 2;
   let faultToken = faultFirst ? part[2] : "NONE";
   if (states[part[1]]) stateText.value = states[part[1]];
+  /* 新国标 6 秒停充：状态已经不是充电中了（停下来了、出故障了），停止按钮不用再等。 */
+  chargeToken = part[1];
+  stopState(stopGuard, gbChargingState(chargeToken), Date.now());
+  stopRefresh(Date.now());
   duration.value = durationText(part[base]);
   power.value = "—";
   for (let i = 0; i < part.length; i++) {
@@ -3712,6 +3837,17 @@ function applyLine(line) {
     }
     return;
   }
+  if (parseGbStopLine(line) !== null) {
+    /* ACK GBSTOPGET / ACK GBSTOPSET：交给等着的人（设置页、一键配置在更前面已经拿走了）。
+     * 不往下走到 applyAck：那里按“行里有 STOP”认成“已发出停止”。 */
+    const got = parseGbStopLine(line);
+    if (typeof scrWait === "function") scrWait(line);
+    else if (got.kind === "get" && !gbStopSaving.value) {
+      gbStopOn.value = got.on;
+      gbStopKnown.value = true;
+    }
+    return;
+  }
   if (parseTzAck(line) !== null) {
     if (typeof tzWait === "function") tzWait(line);
     return;
@@ -3745,6 +3881,18 @@ function applyLine(line) {
     wifiRssiNow = liveRssi(line);
     wifiRssiPending = liveRssiPending(line);
     showWifiStatus();
+    {
+      /* 新国标 6 秒停充：设置、是不是正在等车、还剩多久（旧固件没有这三个字段）。 */
+      const gb = liveGbStop(line);
+      if (gb) {
+        if (!gbStopSaving.value) {
+          gbStopOn.value = gb.on;
+          gbStopKnown.value = true;
+        }
+        stopLive(stopGuard, gb, Date.now());
+        stopRefresh(Date.now());
+      }
+    }
     return;
   }
   if (line.indexOf("WCFG ") === 0) {
@@ -4130,4 +4278,8 @@ select.field option { background: #111; color: #fff; }
 .group > .card.device em:not(.ver) { flex: none; white-space: nowrap; }
 .group > button.card.device:active { background: #1a1a1a; }
 .settings .alone { margin-top: 10px; }
+/* 首页最底下的 App 版本：小号灰字，跟在「断开蓝牙」后面，在页面里正常排版（不是 fixed），
+ * .app.tabbed 给标签栏和 Home 条留了底边距，滚到底也不会被标签栏盖住。#8c8c8c 在黑底上约 6.9:1。 */
+.appver { margin: 2px 0 0; text-align: center; color: #8c8c8c; font-size: 12px; line-height: 1.4; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.appver bdi { font-variant-numeric: tabular-nums; }
 </style>

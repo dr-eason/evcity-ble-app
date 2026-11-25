@@ -67,7 +67,7 @@ public enum JSONText {
 }
 
 /// 页面调原生的方法。页面那头是 `window.EVC.xxx(...)`，由 evc-shim.js 转成 `{m: 名字, a: [参数]}`。
-/// `loadGate` / `locale` / `mtu` 要同步返回，在 evc-shim.js 里直接答，不到这里。
+/// `loadGate` / `locale` / `mtu` / `appVersion` / `appBuild` 要同步返回，在 evc-shim.js 里直接答，不到这里。
 public enum BridgeCall: Equatable {
     case scan
     case stopScan
@@ -207,12 +207,19 @@ public struct ShimInit {
     public var gate: [String: String]
     public var mock: Bool
     public var nativeFilePicker: Bool
+    /// 装着的 App 版本（CFBundleShortVersionString）和构建号（CFBundleVersion），evc-shim.js 的
+    /// EVC.appVersion() / appBuild() 原样返回，首页底部和设置 → 关于显示。取不到就是空串。
+    public var appVersion: String
+    public var appBuild: String
 
-    public init(locale: String, gate: [String: String], mock: Bool, nativeFilePicker: Bool) {
+    public init(locale: String, gate: [String: String], mock: Bool, nativeFilePicker: Bool,
+                appVersion: String = "", appBuild: String = "") {
         self.locale = locale
         self.gate = gate
         self.mock = mock
         self.nativeFilePicker = nativeFilePicker
+        self.appVersion = appVersion
+        self.appBuild = appBuild
     }
 
     public var script: String {
@@ -221,6 +228,8 @@ public struct ShimInit {
             "gate": gate,
             "mock": mock,
             "nativeFilePicker": nativeFilePicker,
+            "appVersion": appVersion,
+            "appBuild": appBuild,
         ]
         return "window.__evcInit = " + JSONText.encode(object) + ";\n"
     }

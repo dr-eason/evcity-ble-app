@@ -220,5 +220,17 @@ final class BridgeEventTests: XCTestCase {
         XCTAssertEqual(object["gate"] as? [String: String], ["A": "123456"])
         XCTAssertEqual(object["mock"] as? Bool, true)
         XCTAssertEqual(object["nativeFilePicker"] as? Bool, false)
+        // 没给版本号时是空串，界面再用编译时的版本兜底。
+        XCTAssertEqual(object["appVersion"] as? String, "")
+        XCTAssertEqual(object["appBuild"] as? String, "")
+    }
+
+    func testShimInitAppVersion() {
+        let script = ShimInit(locale: "en", gate: [:], mock: false, nativeFilePicker: false,
+                              appVersion: "3.0.1", appBuild: "3001").script
+        let body = String(script.dropFirst("window.__evcInit = ".count).dropLast(2))
+        let object = decode(body)
+        XCTAssertEqual(object["appVersion"] as? String, "3.0.1")
+        XCTAssertEqual(object["appBuild"] as? String, "3001")
     }
 }

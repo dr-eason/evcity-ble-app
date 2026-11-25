@@ -52,7 +52,7 @@ export function langReturn(from, linked) {
 /* 设置页的分组：组名和每组里的入口（App.vue 模板里按钮的 @click）。模板里是一个一个写的
  * （测试要从模板里认出入口），这张表给测试核对：原来配置菜单里的入口一个不少，每个只出现一次。 */
 export const SETTINGS_GROUPS = [
-  { title: "充电设置", items: ["openImax", "page = 'plug'", "openCards", "openNetStop", "openOrders"] },
+  { title: "充电设置", items: ["openImax", "page = 'plug'", "openGbStop", "openCards", "openNetStop", "openOrders"] },
   { title: "网络与平台", items: ["openWifi", "openLte", "openOcpp", "openOcfw"] },
   { title: "保护与屏幕", items: ["openCfg", "openPhase", "openTz", "openScrLang", "openScrTheme", "openQr"] },
   { title: "维护", items: ["openProfiles", "openOta", "openModver", "openTelemetry", "openReboot"] },

@@ -89,10 +89,13 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
 
     /// 页面开始加载前注入的脚本：初始数据 + evc-shim.js（+ Mock 模式的 mock-evc.js）。
     private func bootScript() -> String {
+        let info = Bundle.main.infoDictionary
         let initScript = ShimInit(locale: Locale.preferredLanguages.first ?? "",
                                   gate: gate,
                                   mock: mock,
-                                  nativeFilePicker: AppMode.nativeFilePicker).script
+                                  nativeFilePicker: AppMode.nativeFilePicker,
+                                  appVersion: info?["CFBundleShortVersionString"] as? String ?? "",
+                                  appBuild: info?["CFBundleVersion"] as? String ?? "").script
         var source = initScript + text("evc-shim", "js", in: "Bridge")
         if mock {
             source += "\n" + text("mock-evc", "js", in: "Bridge")

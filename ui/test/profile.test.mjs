@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, hexToText, normalCards, ocppUrlOk, quietSkip, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "../src/profile.js";
+import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, defaultWithLte, hexToText, normalCards, ocppUrlOk, quietSkip, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "../src/profile.js";
 import {
   EXPORT_KIND, IMPORT_MAX_BYTES, PROFILE_FORMAT, PROFILE_MODEL, bodyProblem, exportFileName, exportText, hasSection, importText,
   makeProfile, phaseReason, profileFormat, storedProfileOk,
@@ -42,17 +42,37 @@ function fwAtLeast(fw, need) {
   return true;
 }
 
+/* 新国标 6 秒停充（GBSTOPGET / GBSTOPSET）：这一版固件加的，版本号还是 3.0.0。fw "3.0.0" 的假桩
+ * 有这两条命令；noGb：更早的 3.0.0（版本号一样、没有这两条命令，一声不吭）。更旧的固件都没有，
+ * 所以下面老用例里 2.8.0 及更早的桩，跳过的项里都多一个 "gbstop"。 */
 function makePile(fw, slots = 5, extra) {
+  const gb = fwAtLeast(fw, [3, 0, 0]) && !(extra && extra.noGb);
   const lte = fwAtLeast(fw, [2, 6, 16]);
   const scr = fwAtLeast(fw, [2, 8, 0]) && !(extra && extra.noScr);
   const st = {
-    phase: 0, charging: false, lteOn: false, apn: { proto: 0, apn: "", user: "", pass: "" }, scrLang: 0, scrTheme: 2,
+    phase: 0, charging: false, gbStop: false, lteOn: false, apn: { proto: 0, apn: "", user: "", pass: "" }, scrLang: 0, scrTheme: 2,
     over: fw === "2.6.0" ? 253 : 250, under: fw === "2.6.0" ? 207 : 190, cp: [10.5, 7.5, 4.5, -6], earth: false, leak: false, earthMin: 150,
     imax: 32, plug: false, cards: Array(slots).fill(""),
     sched: { tz: 480, mode: 0, hour: 8, minute: 0 }, qr: { on: false, text: "" },
     ocfw: { on: false, text: "" }, tel: false, netstop: { on: false, sec: 60 },
     wifiOn: false, ssid: "", pass: "", ocppOn: false, url: "",
+    /* 4G 模组拨号：打开 4G 时、4G 开着时 APN 变了（固件 lte_apply）各拨一次，记下用的 APN。 */
+    dials: 0, dialApn: null,
   };
+  /* 下发过的命令名，按顺序。 */
+  const sent = [];
+  const dial = () => { st.dials += 1; st.dialApn = Object.assign({}, st.apn); };
+  /* 固件 lte_cfg_exclusive：开 4G 关 WiFi 和遥测，开 WiFi 或遥测关 4G；两条链路由“有”变成
+   * 都关时 OCPP 跟着关。 */
+  function setSwitch(which, on) {
+    const had = st.wifiOn || st.lteOn;
+    const wasLte = st.lteOn;
+    st[which] = on;
+    if (on && which === "lteOn") { st.wifiOn = false; st.tel = false; }
+    if (on && (which === "wifiOn" || which === "tel")) st.lteOn = false;
+    if (had && !st.wifiOn && !st.lteOn) st.ocppOn = false;
+    if (st.lteOn && !wasLte) dial();
+  }
   const flagText = (rest) => {
     const tab = rest.indexOf("\t");
     return tab < 0 ? [rest, ""] : [rest.slice(0, tab), rest.slice(tab + 1)];
@@ -61,6 +81,7 @@ function makePile(fw, slots = 5, extra) {
     const tab = cmd.indexOf("\t");
     const name = tab < 0 ? cmd : cmd.slice(0, tab);
     const arg = tab < 0 ? "" : cmd.slice(tab + 1);
+    sent.push(name);
     switch (name) {
       case "CFGGET":
         return ["CFG " + st.over.toFixed(0) + " " + st.under.toFixed(0) + " " + st.cp.map((v) => v.toFixed(2)).join(" ") +
@@ -102,7 +123,7 @@ function makePile(fw, slots = 5, extra) {
       case "OCFWGET": return ["OCFW " + (st.ocfw.on ? 1 : 0) + "\t" + st.ocfw.text];
       case "OCFWSET": { const [on, text] = flagText(arg); st.ocfw = { on: on === "1", text }; return ["ACK OCFWSET OK"]; }
       case "TELGET": return ["TEL " + (st.tel ? 1 : 0)];
-      case "TELSET": st.tel = arg === "1"; return ["ACK TELSET OK"];
+      case "TELSET": setSwitch("tel", arg === "1"); return ["ACK TELSET OK"];
       case "NETSTOPGET": return ["NETSTOP " + (st.netstop.on ? 1 : 0) + " " + st.netstop.sec];
       case "NETSTOPSET": {
         const [on, sec] = flagText(arg);
@@ -111,8 +132,7 @@ function makePile(fw, slots = 5, extra) {
       }
       case "WIFISWGET": return ["WIFISW " + (st.wifiOn ? 1 : 0)];
       case "WIFISWSET":
-        st.wifiOn = arg === "1";
-        if (!st.wifiOn) st.ocppOn = false;
+        setSwitch("wifiOn", arg === "1");
         return ["ACK WIFISWSET OK", "OCPPSW " + (st.ocppOn ? 1 : 0)];
       case "WCFGGET": return ["WCFG DOWN " + (st.ssid || "-")];
       case "WSAVE": { const [ssid, pass] = flagText(arg); st.ssid = ssid; st.pass = pass; return ["ACK WSAVE OK"]; }
@@ -133,20 +153,31 @@ function makePile(fw, slots = 5, extra) {
       }
       default: break;
     }
+    if (gb) {
+      switch (name) {
+        case "GBSTOPGET": return ["ACK GBSTOPGET " + (st.gbStop ? 1 : 0)];
+        case "GBSTOPSET":
+          if (arg !== "0" && arg !== "1") return ["ACK GBSTOPSET FAIL"];
+          if (!(extra && extra.dropGb)) st.gbStop = arg === "1";
+          return ["ACK GBSTOPSET OK"];
+        default: break;
+      }
+    }
     if (lte) {
       switch (name) {
         case "LTEGET": return ["ACK LTE " + (st.lteOn ? 1 : 0)];
         case "LTESET":
           if (arg !== "0" && arg !== "1") return ["ACK LTESET FAIL"];
-          st.lteOn = arg === "1";
-          /* lte_cfg_exclusive：开 4G 关 WiFi 和遥测；两条链路都关了，OCPP 跟着关。 */
-          if (st.lteOn) { st.wifiOn = false; st.tel = false; }
-          else if (!st.wifiOn) st.ocppOn = false;
+          setSwitch("lteOn", arg === "1");
           return ["ACK LTESET OK"];
         case "APNGET": return ["ACK APN " + st.apn.proto + "\t" + st.apn.apn + "\t" + st.apn.user + "\t" + st.apn.pass];
         case "APNSET": {
           const part = arg.split("\t");
-          st.apn = { proto: Number(part[0]), apn: part[1] || "", user: part[2] || "", pass: part[3] || "" };
+          const next = { proto: Number(part[0]), apn: part[1] || "", user: part[2] || "", pass: part[3] || "" };
+          const changed = JSON.stringify(next) !== JSON.stringify(st.apn);
+          st.apn = next;
+          /* wb2.c APNSET：4G 开着并且 APN 变了才让模组重新拨号。 */
+          if (changed && st.lteOn) dial();
           return ["ACK APNSET OK"];
         }
         default: break;
@@ -169,7 +200,7 @@ function makePile(fw, slots = 5, extra) {
     }
     return [];
   }
-  return { st, answer, slots, fw };
+  return { st, answer, slots, fw, sent };
 }
 
 /* App 的 askLine：发一条，在通过了蓝牙层过滤的行里找第一条 accept 认的。没有就是超时。 */
@@ -635,7 +666,7 @@ test("2.8.0 的桩：16 组都读到（4G 开关也读），还原到另一台 2
   configured28(source);
   const { body, failed, skipped } = backup(source, false);
   assert.deepEqual(failed, []);
-  assert.deepEqual(skipped, []);
+  assert.deepEqual(skipped, ["gbstop"]);
   assert.equal(body.scrLang, 4);
   assert.equal(body.scrTheme, 5);
   assert.equal(body.phase, 1);
@@ -645,7 +676,7 @@ test("2.8.0 的桩：16 组都读到（4G 开关也读），还原到另一台 2
   const result = restore(target, JSON.parse(JSON.stringify(body)));
   assert.deepEqual(result, []);
   /* 没勾 4G 开关：跳过，其余都写了。 */
-  assert.deepEqual(result.skipped, ["lte"]);
+  assert.deepEqual(result.skipped, ["gbstop", "lte"]);
   assert.deepEqual([target.st.scrLang, target.st.scrTheme, target.st.phase], [4, 5, 1]);
   assert.deepEqual(backup(target, false).body, body);
 });
@@ -658,7 +689,7 @@ test("旧备份（没有屏幕语言、颜色、相位、4G 开关）还原到 2
   Object.assign(target.st, { scrLang: 3, scrTheme: 0, phase: 1 });
   const result = restore(target, JSON.parse(JSON.stringify(saved.body)), { withLte: true });
   assert.deepEqual(result, []);
-  assert.deepEqual(result.skipped, ["lte", "scrlang", "scrtheme", "phase"]);
+  assert.deepEqual(result.skipped, ["gbstop", "lte", "scrlang", "scrtheme", "phase"]);
   assert.deepEqual([target.st.scrLang, target.st.scrTheme, target.st.phase], [3, 0, 1]);
   /* 原来的几组照样写上了。 */
   assert.equal(target.st.imax, 16);
@@ -672,7 +703,8 @@ test("2.8.0 的备份还原到旧固件：屏幕语言、颜色、4G 跳过（�
   const target = makePile("2.6.0", 10);
   const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: true });
   assert.deepEqual(result, []);
-  assert.deepEqual(result.skipped, ["lte", "apn", "scrlang", "scrtheme"]);
+  /* APN 在 4G 开关前面（先存 APN，再开 4G）。 */
+  assert.deepEqual(result.skipped, ["gbstop", "apn", "lte", "scrlang", "scrtheme"]);
   assert.equal(target.st.phase, 1);
   /* 旧固件的桩备份出来：这几组是 null，整份照样保存。 */
   const back = backup(makePile("2.6.0"), false);
@@ -685,14 +717,14 @@ test("版本号是 2.8.0、但还没有屏幕语言和颜色命令的固件：�
   configured28(pile);
   const { body, failed, skipped } = backup(pile, false);
   assert.deepEqual(failed, []);
-  assert.deepEqual(skipped, ["scrlang", "scrtheme"]);
+  assert.deepEqual(skipped, ["gbstop", "scrlang", "scrtheme"]);
   assert.equal(body.scrLang, null);
   assert.equal(body.phase, 1);
   const full = makePile("2.8.0", 10);
   configured28(full);
   const result = restore(makePile("2.8.0", 10, { noScr: true }), backup(full, false).body);
   assert.deepEqual(result, []);
-  assert.deepEqual(result.skipped, ["lte", "scrlang", "scrtheme"]);
+  assert.deepEqual(result.skipped, ["gbstop", "lte", "scrlang", "scrtheme"]);
 });
 
 test("相位：充电中改成另一个值桩回 BUSY，这一组失败并提示先停充电；其余组照写，不回滚", () => {
@@ -734,7 +766,7 @@ test("4G 开关：勾了才下发；下发在 OCPP 前面，用 4G 联网的备�
   Object.assign(target.st, { wifiOn: true, lteOn: false });
   const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: true });
   assert.deepEqual(result, []);
-  assert.deepEqual(result.skipped, []);
+  assert.deepEqual(result.skipped, ["gbstop"]);
   assert.deepEqual([target.st.lteOn, target.st.wifiOn, target.st.ocppOn], [true, false, true]);
   /* 不勾：4G 开关不动。 */
   const keep = makePile("2.8.0", 10);
@@ -742,6 +774,141 @@ test("4G 开关：勾了才下发；下发在 OCPP 前面，用 4G 联网的备�
   const plain = restore(keep, JSON.parse(JSON.stringify(Object.assign({}, saved, { lte: false }))));
   assert.ok(plain.skipped.includes("lte"));
   assert.equal(keep.st.lteOn, true);
+});
+
+/* ---- 3.0.0 真机问题：4G 联网的桩备份下发后 4G 没打开（「同时下发 4G 开关」默认不勾）。 ---- */
+
+/* 用 4G 联网的 2.8.0 桩：4G 开、WiFi 关（互斥）、OCPP 开，APN 是专网。 */
+function lteSource() {
+  const source = makePile("3.0.0", 10);
+  configured28(source);
+  Object.assign(source.st, { lteOn: true, wifiOn: false, tel: false, ocppOn: true, ssid: "", pass: "" });
+  return source;
+}
+
+test("4G 联网的备份：下发确认默认勾上「同时下发 4G 开关」；4G 关的备份默认不勾；旧备份没有这一项（不显示，也不勾）", () => {
+  const saved = backup(lteSource(), false).body;
+  assert.equal(saved.lte, true);
+  assert.equal(saved.wifi.on, false);
+  assert.equal(hasSection("lte", saved), true);
+  assert.equal(defaultWithLte(saved), true);
+  /* 4G 关着的桩。 */
+  const wifiPile = makePile("3.0.0", 10);
+  configured28(wifiPile);
+  const plain = backup(wifiPile, false).body;
+  assert.equal(plain.lte, false);
+  assert.equal(hasSection("lte", plain), true);
+  assert.equal(defaultWithLte(plain), false);
+  /* 旧备份（没有 lte）、旧固件的桩上读的（lte 是 null）、坏值：不显示这一行，也不勾。 */
+  const old = oldRecord(saved).body;
+  assert.equal(hasSection("lte", old), false);
+  assert.equal(defaultWithLte(old), false);
+  assert.equal(defaultWithLte(Object.assign({}, saved, { lte: null })), false);
+  assert.equal(defaultWithLte(Object.assign({}, saved, { lte: 1 })), false);
+  assert.equal(defaultWithLte(null), false);
+  assert.equal(defaultWithLte(undefined), false);
+});
+
+test("4G 联网的备份按默认下发到用 WiFi 的桩：先存 APN，再开 4G（只拨一次，用的就是备份里的 APN），再写 OCPP；全部读回一致", () => {
+  const saved = backup(lteSource(), false).body;
+  const target = makePile("3.0.0", 10);
+  /* 目标桩现在用 WiFi 连着平台，APN 是出厂的空值。 */
+  Object.assign(target.st, { wifiOn: true, ssid: "shop", pass: "pw12345678", lteOn: false, ocppOn: true, url: "ws://old.example/ocpp/X" });
+  const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: defaultWithLte(saved) });
+  assert.deepEqual(result, []);
+  assert.deepEqual(result.skipped, []);
+  /* 最后：4G 开、WiFi 关、OCPP 开，地址和 APN 都是备份里的。 */
+  assert.deepEqual([target.st.lteOn, target.st.wifiOn, target.st.ocppOn, target.st.tel], [true, false, true, false]);
+  assert.equal(target.st.url, saved.ocpp.url);
+  assert.deepEqual(target.st.apn, saved.apn);
+  /* 模组只拨了一次，拨号时 APN 已经是备份里的。 */
+  assert.equal(target.st.dials, 1);
+  assert.deepEqual(target.st.dialApn, saved.apn);
+  /* 命令顺序：WIFISWSET（关 WiFi）→ APNSET → LTESET → OCPPSWSET。 */
+  const order = (name) => target.sent.indexOf(name);
+  for (const name of ["WIFISWSET", "APNSET", "LTESET", "OCPPSWSET"]) assert.ok(order(name) >= 0, name);
+  assert.ok(order("WIFISWSET") < order("APNSET"));
+  assert.ok(order("APNSET") < order("LTESET"));
+  assert.ok(order("LTESET") < order("OCPPSWSET"));
+  assert.equal(target.sent.filter((name) => name === "LTESET").length, 1);
+  /* 写的就是 LTESET 1。 */
+  assert.equal(writePlan("lte", saved).list[0].command, "LTESET\t1");
+  /* 再从目标桩备份一次，和原来的一模一样（WiFi 的热点名不比：备份里是空的，没有发 WSAVE）。 */
+  const back = backup(target, false).body;
+  for (const key of SECTIONS.map((item) => item.key)) {
+    if (key === "net") continue;
+    assert.ok(sameSection(key, saved, back), key);
+  }
+  assert.equal(back.wifi.on, false);
+});
+
+test("4G 联网的备份下发到 4G 已经开着、APN 不一样的桩：APN 变了模组重拨一次，最后用的是备份里的 APN", () => {
+  const saved = backup(lteSource(), false).body;
+  const target = makePile("3.0.0", 10);
+  Object.assign(target.st, { wifiOn: false, lteOn: true, ocppOn: true, apn: { proto: 0, apn: "cmnet", user: "", pass: "" } });
+  const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: defaultWithLte(saved) });
+  assert.deepEqual(result, []);
+  assert.deepEqual([target.st.lteOn, target.st.wifiOn, target.st.ocppOn], [true, false, true]);
+  assert.equal(target.st.dials, 1);
+  assert.deepEqual(target.st.dialApn, saved.apn);
+  /* APN 一样：不重拨。 */
+  const same = makePile("3.0.0", 10);
+  Object.assign(same.st, { wifiOn: false, lteOn: true, ocppOn: true, apn: Object.assign({}, saved.apn) });
+  assert.deepEqual(restore(same, JSON.parse(JSON.stringify(saved)), { withLte: true }), []);
+  assert.equal(same.st.dials, 0);
+  assert.deepEqual(same.st.apn, saved.apn);
+});
+
+test("4G 联网的备份、用户取消了勾：4G 开关跳过不发，桩上 4G 不动", () => {
+  const saved = backup(lteSource(), false).body;
+  const target = makePile("3.0.0", 10);
+  Object.assign(target.st, { wifiOn: true, lteOn: false, ocppOn: true });
+  const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: false });
+  assert.deepEqual(result, []);
+  assert.deepEqual(result.skipped, ["lte"]);
+  assert.ok(!target.sent.includes("LTESET"));
+  assert.equal(target.st.lteOn, false);
+});
+
+test("4G 关的备份按默认下发：不发 LTESET，桩上 4G 开关不动", () => {
+  const source = makePile("3.0.0", 10);
+  configured28(source);
+  Object.assign(source.st, { wifiOn: true, ssid: "shop", pass: "pw12345678", ocppOn: true, url: "ws://csms.example/ocpp/A" });
+  const saved = backup(source, false).body;
+  assert.equal(defaultWithLte(saved), false);
+  for (const lteOn of [false, true]) {
+    const target = makePile("3.0.0", 10);
+    Object.assign(target.st, { lteOn, wifiOn: !lteOn, ocppOn: true });
+    const result = restore(target, JSON.parse(JSON.stringify(saved)), { withLte: defaultWithLte(saved) });
+    assert.deepEqual(result, []);
+    assert.deepEqual(result.skipped, ["lte"]);
+    assert.ok(!target.sent.includes("LTESET"));
+    /* 备份里 WiFi 开着：打开 WiFi，固件按互斥关掉 4G，OCPP 还是开的。 */
+    assert.deepEqual([target.st.wifiOn, target.st.lteOn, target.st.ocppOn], [true, false, true]);
+  }
+});
+
+test("App.vue：下发确认的勾选框按备份默认，说明文字分两种，12 种语言都有", () => {
+  const vue = readFileSync(new URL("../src/App.vue", import.meta.url), "utf8");
+  /* 打开下发确认时按备份给默认值，不再一律不勾。 */
+  assert.match(vue, /function askApply\(item\) \{[\s\S]*?profileWithLte\.value = defaultWithLte\(item\.body\);[\s\S]*?\n\}/);
+  assert.doesNotMatch(vue, /function askApply\(item\) \{[^}]*profileWithLte\.value = false;/);
+  /* 备份里没有 4G 开关时这一行不显示。 */
+  assert.match(vue, /<label v-if="profileAskId === item\.id && hasSection\('lte', item\.body\)" class="row">/);
+  /* 下发时用的是勾选框的值（用户可以取消）。 */
+  assert.match(vue, /const opts = \{ withLte: !!profileWithLte\.value && hasSection\("lte", item\.body\) \};/);
+  const onKey = "这份配置来自用 4G 联网的充电桩，默认一起下发：打开 4G（会关掉 WiFi），按配置里的 APN 联网。不勾就不改 4G 开关，下发后这台充电桩可能连不上网。";
+  const offKey = "默认不下发。勾选后按这份配置打开或关闭 4G，可能会断开这台充电桩正在用的 WiFi 或 4G 连接。";
+  assert.ok(vue.includes("<small v-if=\"defaultWithLte(item.body)\">{{ t('" + onKey + "') }}</small>"));
+  assert.ok(vue.includes("<small v-else>{{ t('" + offKey + "') }}</small>"));
+  for (const item of languages) {
+    if (item.id === "zh") continue;
+    for (const key of [onKey, offKey]) {
+      const out = translate(item.id, key);
+      assert.ok(out && out !== key, item.id + " 没有翻译: " + key);
+      assert.ok(out.includes("4G"), item.id);
+    }
+  }
 });
 
 test("格式版本：新记录带 format 2；没有 format 的旧记录照样能列出、能下发", () => {
@@ -882,5 +1049,192 @@ test("新提示 12 种语言都有：跳过原因、相位 BUSY、导出导入�
       if (key.includes("{n}")) assert.ok(out.includes("2"), item.id + " 丢了 {n}: " + key);
       if (key.includes("{name}")) assert.ok(out.includes("X"), item.id + " 丢了 {name}: " + key);
     }
+  }
+});
+
+
+/* ---------------------------------------------------------------- 新国标 6 秒停充 */
+
+test("新国标6秒停充：在即插即充后面，可有可无，桩不回按不支持跳过；格式号没有加", () => {
+  const keys = SECTIONS.map((item) => item.key);
+  assert.equal(keys.indexOf("gbstop"), keys.indexOf("plug") + 1);
+  assert.equal(keys.length, 17);
+  const section = SECTIONS.find((item) => item.key === "gbstop");
+  assert.deepEqual(section, { key: "gbstop", name: "新国标6秒停充", since: [3, 0, 0], optional: true, quiet: true });
+  assert.equal(PROFILE_FORMAT, 2);
+  assert.equal(blankBody().gbStop, null);
+  for (const fw of ["2.8.0", "2.6.16", "", "—"]) {
+    assert.equal(sectionSkip(section, "read", fw, blankBody()), "固件不支持", fw);
+    assert.equal(sectionSkip(section, "write", fw, { gbStop: true }), "固件不支持", fw);
+  }
+  assert.equal(sectionSkip(section, "read", "3.0.0", blankBody()), "");
+  assert.equal(sectionSkip(section, "write", "V3.0.0", { gbStop: false }), "");
+  assert.equal(sectionSkip(section, "write", "3.0.0", blankBody()), "这份配置里没有这一项");
+  assert.equal(sectionSkip(section, "write", "3.0.0", oldRecord(blankBody()).body), "这份配置里没有这一项");
+  assert.equal(quietSkip(section, null), "充电桩没有应答，固件可能还不支持这一项");
+  assert.equal(quietSkip(section, "ACK GBSTOPGET 1"), "");
+  assert.equal(hasSection("gbstop", { gbStop: true }), true);
+  assert.equal(hasSection("gbstop", { gbStop: false }), true);
+  for (const body of [{}, { gbStop: null }, { gbStop: 1 }, { gbStop: "1" }, null]) {
+    assert.equal(hasSection("gbstop", body), false);
+  }
+});
+
+test("新国标6秒停充的 readPlan / writePlan / sameSection", () => {
+  const read = readPlan("gbstop").list;
+  assert.equal(read.length, 1);
+  assert.equal(read[0].command, "GBSTOPGET");
+  const body = blankBody();
+  assert.ok(read[0].accept("ACK GBSTOPGET 1") && read[0].ok("ACK GBSTOPGET 1", body));
+  assert.equal(body.gbStop, true);
+  assert.ok(read[0].ok("ACK GBSTOPGET 0", body));
+  assert.equal(body.gbStop, false);
+  /* 写命令的应答、状态行、鉴权应答都不当成读到的值。 */
+  for (const line of ["ACK GBSTOPSET OK", "ACK GBSTOPGET 2", "ACK GBSTOPGET", "ACK GBSTOPGET AUTH",
+    "LIVE 0.4 6.02 -52 1 1 5990", "ACK PLUGGET 1"]) {
+    assert.equal(read[0].accept(line), false, line);
+  }
+  assert.equal(writePlan("gbstop", { gbStop: true }).list[0].command, "GBSTOPSET\t1");
+  assert.equal(writePlan("gbstop", { gbStop: false }).list[0].command, "GBSTOPSET\t0");
+  const step = writePlan("gbstop", { gbStop: true }).list[0];
+  assert.ok(step.accept("ACK GBSTOPSET OK") && step.ok("ACK GBSTOPSET OK"));
+  assert.ok(step.accept("ACK GBSTOPSET FAIL") && !step.ok("ACK GBSTOPSET FAIL"));
+  assert.equal(step.accept("ACK GBSTOPGET 1"), false);
+  for (const bad of [{}, { gbStop: null }, { gbStop: 1 }, { gbStop: "true" }]) {
+    assert.ok(writePlan("gbstop", bad).error, JSON.stringify(bad));
+  }
+  assert.equal(sameSection("gbstop", { gbStop: true }, { gbStop: true }), true);
+  assert.equal(sameSection("gbstop", { gbStop: false }, { gbStop: false }), true);
+  assert.equal(sameSection("gbstop", { gbStop: true }, { gbStop: false }), false);
+  assert.equal(sameSection("gbstop", { gbStop: null }, { gbStop: null }), false);
+});
+
+test("这一版的桩：17 组都读到，设置在备份里；还原到另一台，读回一致，再备份一次内容相同", () => {
+  for (const on of [true, false]) {
+    const source = makePile("3.0.0", 10);
+    configured28(source);
+    source.st.gbStop = on;
+    const { body, failed, skipped } = backup(source, false);
+    assert.deepEqual(failed, []);
+    assert.deepEqual(skipped, []);
+    assert.equal(body.gbStop, on);
+    const target = makePile("3.0.0", 10);
+    target.st.gbStop = !on;
+    const result = restore(target, JSON.parse(JSON.stringify(body)));
+    assert.deepEqual(result, []);
+    assert.deepEqual(result.skipped, ["lte"]);
+    assert.equal(target.st.gbStop, on);
+    assert.ok(target.sent.includes("GBSTOPSET"));
+    assert.deepEqual(backup(target, false).body, body);
+  }
+});
+
+test("旧备份（没有这一项）还原到这一版的桩：这一项跳过，不算失败，桩上原值不动", () => {
+  const old = makePile("2.8.0", 10);
+  configured28(old);
+  const { body } = backup(old, false);
+  assert.equal(body.gbStop, null);
+  /* 2.8.0 的 App 存的记录里根本没有这个字段。 */
+  const stored = JSON.parse(JSON.stringify(body));
+  delete stored.gbStop;
+  for (const before of [true, false]) {
+    for (const record of [body, stored]) {
+      const target = makePile("3.0.0", 10);
+      target.st.gbStop = before;
+      const result = restore(target, JSON.parse(JSON.stringify(record)));
+      assert.deepEqual(result, []);
+      assert.ok(result.skipped.includes("gbstop"));
+      assert.equal(target.st.gbStop, before);
+      assert.ok(!target.sent.includes("GBSTOPSET") && !target.sent.includes("GBSTOPGET"));
+    }
+  }
+});
+
+test("版本号也是 3.0.0、但没有这两条命令的固件：读、写都按不支持跳过，整份照样保存、照样下发", () => {
+  const early = makePile("3.0.0", 10, { noGb: true });
+  configured28(early);
+  const { body, failed, skipped } = backup(early, false);
+  assert.deepEqual(failed, []);
+  assert.deepEqual(skipped, ["gbstop"]);
+  assert.equal(body.gbStop, null);
+  /* 带这一项的备份下发到它上面：这一项跳过，别的照写。 */
+  const source = makePile("3.0.0", 10);
+  configured28(source);
+  source.st.gbStop = true;
+  const full = backup(source, false).body;
+  const target = makePile("3.0.0", 10, { noGb: true });
+  const result = restore(target, JSON.parse(JSON.stringify(full)));
+  assert.deepEqual(result, []);
+  assert.deepEqual(result.skipped, ["gbstop", "lte"]);
+  assert.equal(target.st.imax, source.st.imax);
+  /* 更旧的固件（2.8.0）：按版本直接跳过，命令都不发。 */
+  const older = makePile("2.8.0", 10);
+  const again = restore(older, JSON.parse(JSON.stringify(full)));
+  assert.deepEqual(again, []);
+  assert.ok(again.skipped.includes("gbstop") && !older.sent.includes("GBSTOPSET"));
+});
+
+test("桩回 OK 但没存上：读回核对发现，这一项失败", () => {
+  const source = makePile("3.0.0", 10);
+  configured28(source);
+  source.st.gbStop = true;
+  const { body } = backup(source, false);
+  const liar = makePile("3.0.0", 10, { dropGb: true });
+  const result = restore(liar, JSON.parse(JSON.stringify(body)));
+  assert.deepEqual([...result], ["gbstop"]);
+});
+
+test("导出 / 导入：带这一项和不带这一项的文件都能导入；值不是 true / false 整份不进", () => {
+  const source = makePile("3.0.0", 10);
+  configured28(source);
+  source.st.gbStop = true;
+  const withField = backup(source, false).body;
+  assert.equal(bodyProblem(withField), "");
+  const without = JSON.parse(JSON.stringify(withField));
+  delete without.gbStop;
+  assert.equal(bodyProblem(without), "");
+  assert.equal(bodyProblem(Object.assign({}, withField, { gbStop: null })), "");
+  assert.equal(bodyProblem(Object.assign({}, withField, { gbStop: false })), "");
+  for (const bad of [1, 0, "1", "true", {}, []]) {
+    assert.equal(bodyProblem(Object.assign({}, withField, { gbStop: bad })), "新国标6秒停充", JSON.stringify(bad));
+  }
+  /* 往返：导出再导入，这一项还在。 */
+  let seq = 0;
+  const newId = () => "id" + (++seq);
+  const list = [makeProfile("带设置", withField, 1795000000000, "a1"), makeProfile("不带", without, 1795000001000, "a2")];
+  const text = exportText(list, 1795000002000);
+  const file = JSON.parse(text);
+  assert.equal(file.format, 2);
+  assert.equal(file.profiles[0].body.gbStop, true);
+  assert.ok(!("gbStop" in file.profiles[1].body));
+  const back = importText(text, [], newId);
+  assert.equal(back.error, undefined);
+  assert.equal(back.list.length, 2);
+  assert.equal(back.list[0].body.gbStop, true);
+  assert.equal(hasSection("gbstop", back.list[0].body), true);
+  assert.equal(hasSection("gbstop", back.list[1].body), false);
+  /* 旧 App（2.8.0）导出的文件：format 2，没有这个字段。导入后下发时这一项跳过。 */
+  const oldFile = JSON.stringify({ kind: EXPORT_KIND, format: 2, exportedAt: 1, profiles: [
+    { format: 2, id: "x", name: "旧 App 导出的", savedAt: 5, model: PROFILE_MODEL, body: without }] });
+  const oldBack = importText(oldFile, [], newId);
+  assert.equal(oldBack.error, undefined);
+  const target = makePile("3.0.0", 10);
+  target.st.gbStop = true;
+  const result = restore(target, oldBack.list[0].body);
+  assert.deepEqual(result, []);
+  assert.ok(result.skipped.includes("gbstop"));
+  assert.equal(target.st.gbStop, true);
+  /* 更早的（没有 format 字段的）记录也一样。 */
+  const v1 = oldRecord(without);
+  const v1Back = importText(JSON.stringify([v1]), [], newId);
+  assert.equal(v1Back.error, undefined);
+  assert.equal(hasSection("gbstop", v1Back.list[0].body), false);
+  /* 坏值：整份不进，说出是哪一项。 */
+  const badFile = JSON.stringify([makeProfile("坏", Object.assign({}, withField, { gbStop: "on" }), 1, "b")]);
+  const refused = importText(badFile, [], newId);
+  assert.equal(refused.error, "第 {n} 份配置里的「{name}」不能用，整个文件没有导入");
+  assert.equal(refused.vars.name, "新国标6秒停充");
+  for (const lang of languages.map((item) => item.id).filter((id) => id !== "zh")) {
+    assert.notEqual(translate(lang, "新国标6秒停充"), "新国标6秒停充", lang);
   }
 });
