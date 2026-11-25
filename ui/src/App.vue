@@ -1,5 +1,5 @@
 <template>
-  <main class="app" :class="{ 'privacy-page': page === 'privacy', 'scan-page': page === 'scan' }">
+  <main class="app" :class="{ 'privacy-page': page === 'privacy', 'scan-page': page === 'scan', tabbed: tabBarOn }">
     <header class="top">
       <div>
         <svg class="logo" viewBox="0 0 108 28" width="108" height="28" aria-label="EVCITY">
@@ -9,15 +9,7 @@
         <p class="sub">{{ t(pageTitle) }}</p>
         <p v-if="page !== 'scan' && faultText" class="fault on">{{ t(faultText) }}</p>
       </div>
-      <button v-if="page === 'scan'" class="lang" @click="openLang">{{ currentLangName }}</button>
-      <div v-else-if="page === 'charge'" class="top-actions">
-        <button class="lang" @click="openLang">{{ currentLangName }}</button>
-        <button class="gear" aria-label="充电桩配置" @click="openMenu">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-            <path fill="currentColor" d="M19.4 13.4a7.8 7.8 0 0 0 .1-1.4 7.8 7.8 0 0 0-.1-1.4l2-1.6-2-3.4-2.4 1a7.2 7.2 0 0 0-1.2-.7L15.2 3h-6.4L8.2 6a7.2 7.2 0 0 0-1.2.7l-2.4-1-2 3.4 2 1.6a7.8 7.8 0 0 0 0 2.8l-2 1.6 2 3.4 2.4-1a7.2 7.2 0 0 0 1.2.7L8.8 21h6.4l.6-2.9a7.2 7.2 0 0 0 1.2-.7l2.4 1 2-3.4-2-1.6zM12 15.2A3.2 3.2 0 1 1 12 8.8a3.2 3.2 0 0 1 0 6.4z"/>
-          </svg>
-        </button>
-      </div>
+      <button v-if="page === 'scan' || isTabPage(page)" class="lang" @click="openLang">{{ currentLangName }}</button>
       <button v-else class="text" @click="back">{{ t('返回') }}</button>
     </header>
 
@@ -51,7 +43,7 @@
       <div class="scan-dock">
         <button class="go" @click="scan">{{ scanning ? t('停止扫描') : t('扫描充电桩') }}</button>
         <button class="ghost" @click="restartApp">{{ t('没搜到，关闭重试') }}</button>
-        <button class="privacy-link" @click="page = 'privacy'">{{ t('隐私协议') }}</button>
+        <button class="privacy-link" @click="openPrivacy('scan')">{{ t('隐私协议') }}</button>
       </div>
     </section>
 
@@ -95,6 +87,10 @@
         <span>{{ lteHome ? lteHomeLine : t(wifi) }}</span>
         <span class="ocpp" :class="ocppKind">{{ t(ocppText) }}</span>
       </div>
+      <button class="card device" @click="goTab('sched')">
+        <span><strong>{{ t('预约充电') }}</strong><small>{{ t('按充电桩时区的钟点启动') }}</small></span>
+        <em>{{ schedLabel }}</em>
+      </button>
       <p class="note">{{ t(note) }}</p>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
     </section>
@@ -124,79 +120,117 @@
       <PrivacyPolicy :lang="lang" />
     </section>
 
-    <section v-else-if="page === 'menu'" class="body">
-      <button class="card device" @click="openImax">
-        <span><strong>{{ t('最大电流') }}</strong><small>{{ t('方波按这个电流发，充电中立即生效') }}</small></span>
-        <em>{{ imax }} A</em>
-      </button>
-      <button class="card device" @click="page = 'plug'">
-        <span><strong>{{ t('即插即充') }}</strong><small>{{ plugDip ? t('拨码2 强制打开') : t('插枪后自动开始') }}</small></span>
-        <em>{{ plugDip ? t('拨码开') : (plug ? t('开') : t('关')) }}</em>
-      </button>
-      <button class="card device" @click="openCards">
-        <span><strong>{{ t('本地IC卡') }}</strong><small>{{ t('白名单里的卡直接刷卡启动和停止') }}</small></span>
-        <em>›</em>
-      </button>
-      <button class="card device" @click="openWifi">
-        <span><strong>{{ t('WiFi 配网') }}</strong><small>{{ t('热点') }}</small></span>
-        <em>{{ wifiOn ? t('开') : t('关') }}</em>
-      </button>
-      <button class="card device" @click="openLte">
-        <span><strong>{{ t('4G 设置') }}</strong><small>{{ t('移动网络和 APN') }}</small></span>
-        <em>{{ lteBrief }}</em>
-      </button>
-      <button class="card device" @click="openOcpp">
-        <span><strong>{{ t('OCPP 服务器') }}</strong><small>{{ t('平台地址') }}</small></span>
-        <em>{{ ocppOn ? t('开') : t('关') }}</em>
-      </button>
-      <button class="card device" @click="openSched">
-        <span><strong>{{ t('预约充电') }}</strong><small>{{ t('按充电桩时区的钟点启动') }}</small></span>
-        <em>{{ schedLabel }}</em>
-      </button>
-      <button class="card device" @click="openTz">
-        <span><strong>{{ t('时区设置') }}</strong><small>{{ t('屏幕、充电记录和预约的钟点按这个时区') }}</small></span>
-        <em class="ver">{{ tzBrief }}</em>
-      </button>
-      <button class="card device" @click="openQr">
-        <span><strong>{{ t('屏幕二维码') }}</strong><small>{{ t('未充电时显示在首页右侧') }}</small></span>
-        <em>{{ qrOn ? t('开') : t('关') }}</em>
-      </button>
-      <button class="card device" @click="openOcfw">
-        <span><strong>{{ t('OCPP上报版本号') }}</strong><small>{{ ocfwText || t('跟固件版本相同') }}</small></span>
-        <em>{{ ocfwOn ? t('开') : t('关') }}</em>
-      </button>
-      <button class="card device" @click="openOrders">
-        <span><strong>{{ t('充电记录') }}</strong><small>{{ t('最近 10 次，存在充电桩里') }}</small></span>
-        <em>›</em>
-      </button>
-      <button class="card device" @click="openTelemetry">
-        <span><strong>{{ t('遥测') }}</strong><small>{{ t('遥测串口每秒发送状态') }}</small></span>
-        <em>{{ telemetry ? t('开') : t('关') }}</em>
-      </button>
-      <button class="card device" @click="openNetStop">
-        <span><strong>{{ t('断网停充') }}</strong><small>{{ t('OCPP 掉线超时后停止充电') }}</small></span>
-        <em>{{ netStopOn ? (t('开') + ' ' + netStopSec + ' s') : t('关') }}</em>
-      </button>
-      <button class="card device" @click="openCfg">
-        <span><strong>{{ t('保护设置') }}</strong><small>{{ t('过压、欠压、CP、接地、漏电') }}</small></span>
-        <em>›</em>
-      </button>
-      <button class="card device" @click="openReboot">
-        <span><strong>{{ t('重启') }}</strong><small>{{ t('正在充电会先停止，然后复位') }}</small></span>
-        <em>›</em>
-      </button>
-      <button class="card device" @click="openProfiles">
-        <span><strong>{{ t('一键配置') }}</strong><small>{{ t('保存在手机上，可下发到任意一台同型号充电桩') }}</small></span>
-        <em>{{ profiles.length ? profiles.length : '›' }}</em>
-      </button>
-      <button class="card device" @click="openModver">
-        <span><strong>{{ t('蓝牙WiFi版本') }}</strong><small>{{ t('蓝牙/WiFi 模组的版本号和固件版本号') }}</small></span>
-        <em class="ver">{{ modverBrief }}</em>
-      </button>
-      <button class="card device" @click="openOta">
-        <span><strong>{{ t('固件升级') }}</strong><small>{{ t('选择本机上的应用固件，校验后发给充电桩') }}</small></span>
-        <em>{{ fw }}</em>
-      </button>
+    <section v-else-if="page === 'menu'" class="body settings">
+      <p class="group-title">{{ t('充电设置') }}</p>
+      <div class="group">
+        <button class="card device" @click="openImax">
+          <span><strong>{{ t('最大电流') }}</strong><small>{{ t('方波按这个电流发，充电中立即生效') }}</small></span>
+          <em>{{ imax }} A</em>
+        </button>
+        <button class="card device" @click="page = 'plug'">
+          <span><strong>{{ t('即插即充') }}</strong><small>{{ plugDip ? t('拨码2 强制打开') : t('插枪后自动开始') }}</small></span>
+          <em>{{ plugDip ? t('拨码开') : (plug ? t('开') : t('关')) }}</em>
+        </button>
+        <button class="card device" @click="openCards">
+          <span><strong>{{ t('本地IC卡') }}</strong><small>{{ t('白名单里的卡直接刷卡启动和停止') }}</small></span>
+          <em>›</em>
+        </button>
+        <button class="card device" @click="openNetStop">
+          <span><strong>{{ t('断网停充') }}</strong><small>{{ t('OCPP 掉线超时后停止充电') }}</small></span>
+          <em>{{ netStopOn ? (t('开') + ' ' + netStopSec + ' s') : t('关') }}</em>
+        </button>
+        <button class="card device" @click="openOrders">
+          <span><strong>{{ t('充电记录') }}</strong><small>{{ t('最近 10 次，存在充电桩里') }}</small></span>
+          <em>›</em>
+        </button>
+      </div>
+      <p class="group-title">{{ t('网络与平台') }}</p>
+      <div class="group">
+        <button class="card device" @click="openWifi">
+          <span><strong>{{ t('WiFi 配网') }}</strong><small>{{ t('热点') }}</small></span>
+          <em>{{ wifiOn ? t('开') : t('关') }}</em>
+        </button>
+        <button class="card device" @click="openLte">
+          <span><strong>{{ t('4G 设置') }}</strong><small>{{ t('移动网络和 APN') }}</small></span>
+          <em>{{ lteBrief }}</em>
+        </button>
+        <button class="card device" @click="openOcpp">
+          <span><strong>{{ t('OCPP 服务器') }}</strong><small>{{ t('平台地址') }}</small></span>
+          <em>{{ ocppOn ? t('开') : t('关') }}</em>
+        </button>
+        <button class="card device" @click="openOcfw">
+          <span><strong>{{ t('OCPP上报版本号') }}</strong><small>{{ ocfwText || t('跟固件版本相同') }}</small></span>
+          <em>{{ ocfwOn ? t('开') : t('关') }}</em>
+        </button>
+      </div>
+      <p class="group-title">{{ t('保护与屏幕') }}</p>
+      <div class="group">
+        <button class="card device" @click="openCfg">
+          <span><strong>{{ t('保护设置') }}</strong><small>{{ t('过压、欠压、CP、接地、漏电') }}</small></span>
+          <em>›</em>
+        </button>
+        <button class="card device" @click="openTz">
+          <span><strong>{{ t('时区设置') }}</strong><small>{{ t('屏幕、充电记录和预约的钟点按这个时区') }}</small></span>
+          <em class="ver">{{ tzBrief }}</em>
+        </button>
+        <button class="card device" @click="openScrLang">
+          <span><strong>{{ t('屏幕语言') }}</strong><small>{{ t('充电桩屏幕首页的显示语言') }}</small></span>
+          <em class="ver">{{ scrLangBrief }}</em>
+        </button>
+        <button class="card device" @click="openScrTheme">
+          <span><strong>{{ t('屏幕颜色') }}</strong><small>{{ t('充电桩屏幕充电界面的配色') }}</small></span>
+          <em class="ver"><i v-if="scrThemeKnown" class="swatch" :style="{ background: screenThemeColor(scrTheme) }"></i>{{ scrThemeBrief }}</em>
+        </button>
+        <button class="card device" @click="openQr">
+          <span><strong>{{ t('屏幕二维码') }}</strong><small>{{ t('未充电时显示在首页右侧') }}</small></span>
+          <em>{{ qrOn ? t('开') : t('关') }}</em>
+        </button>
+      </div>
+      <p class="group-title">{{ t('维护') }}</p>
+      <div class="group">
+        <button class="card device" @click="openProfiles">
+          <span><strong>{{ t('一键配置') }}</strong><small>{{ t('保存在手机上，可下发到任意一台同型号充电桩') }}</small></span>
+          <em>{{ profiles.length ? profiles.length : '›' }}</em>
+        </button>
+        <button class="card device" @click="openOta">
+          <span><strong>{{ t('固件升级') }}</strong><small>{{ t('选择本机上的应用固件，校验后发给充电桩') }}</small></span>
+          <em>{{ fw }}</em>
+        </button>
+        <button class="card device" @click="openModver">
+          <span><strong>{{ t('蓝牙WiFi版本') }}</strong><small>{{ t('蓝牙/WiFi 模组的版本号和固件版本号') }}</small></span>
+          <em class="ver">{{ modverBrief }}</em>
+        </button>
+        <button class="card device" @click="openTelemetry">
+          <span><strong>{{ t('遥测') }}</strong><small>{{ t('遥测串口每秒发送状态') }}</small></span>
+          <em>{{ telemetry ? t('开') : t('关') }}</em>
+        </button>
+        <button class="card device" @click="openReboot">
+          <span><strong>{{ t('重启') }}</strong><small>{{ t('正在充电会先停止，然后复位') }}</small></span>
+          <em>›</em>
+        </button>
+      </div>
+      <p class="group-title">{{ t('关于') }}</p>
+      <div class="group">
+        <button class="card device" @click="openAuthInfo">
+          <span><strong>{{ t('管理员密码') }}</strong><small>{{ t('连接时核对屏幕上的 6 位密码') }}</small></span>
+          <em>{{ gateRemembered ? t('已记住') : t('未记住') }}</em>
+        </button>
+        <button class="card device" @click="openPrivacy('menu')">
+          <span><strong>{{ t('隐私协议') }}</strong></span>
+          <em>›</em>
+        </button>
+        <div class="card device">
+          <span><strong>{{ t('App 版本') }}</strong></span>
+          <em class="ver">{{ appVersion ? verLabel(appVersion) : '—' }}</em>
+        </div>
+      </div>
+      <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
+    </section>
+
+    <section v-else-if="page === 'authinfo'" class="body">
+      <p class="note">{{ gateRemembered ? t('这台手机已记住这台充电桩的管理员密码，下次连接自动核对。') : t('这台手机没有记住这台充电桩的管理员密码，下次连接要输入屏幕上的密码。') }}</p>
+      <p v-if="authInfoNote" class="note">{{ t(authInfoNote) }}</p>
+      <button class="ghost" :disabled="!gateRemembered" @click="clearRememberedGate">{{ t('清除记住的密码') }}</button>
     </section>
 
     <section v-else-if="page === 'profiles'" class="body">
@@ -286,21 +320,28 @@
     </section>
 
     <section v-else-if="page === 'sched'" class="body">
-      <p class="note">{{ t(schedNote) }}</p>
       <div class="card">
-        <small class="verkey">{{ t('充电桩时区') }}</small>
-        <strong class="verval">{{ tzBrief }}</strong>
-        <small class="verkey">{{ t('在配置菜单的“时区设置”里修改') }}</small>
+        <small class="verkey">{{ t('当前预约') }}</small>
+        <strong class="verval">{{ schedLabel }}</strong>
       </div>
+      <div class="clockbox">
+        <small>{{ t('系统时间') }}</small>
+        <b>{{ t(clock) }}</b>
+      </div>
+      <p class="note">{{ t(schedNote) }}</p>
+      <button class="card device" @click="openTz">
+        <span><strong>{{ t('充电桩时区') }}</strong><small>{{ t('修改时区') }}</small></span>
+        <em class="ver">{{ tzBrief }}</em>
+      </button>
       <div class="links">
-        <button :class="{ go: schedMode === 0 }" @click="schedMode = 0">{{ t('关闭') }}</button>
-        <button :class="{ go: schedMode === 1 }" @click="schedMode = 1">{{ t('一次性') }}</button>
-        <button :class="{ go: schedMode === 2 }" @click="schedMode = 2">{{ t('每天') }}</button>
+        <button :class="{ go: schedMode === 0 }" @click="pickSchedMode(0)">{{ t('关闭') }}</button>
+        <button :class="{ go: schedMode === 1 }" @click="pickSchedMode(1)">{{ t('一次性') }}</button>
+        <button :class="{ go: schedMode === 2 }" @click="pickSchedMode(2)">{{ t('每天') }}</button>
       </div>
       <p class="label">{{ t('开始时间') }}</p>
       <div class="pair">
-        <input v-model="schedHour" class="field" inputmode="numeric" maxlength="2" :placeholder="t('时')">
-        <input v-model="schedMinute" class="field" inputmode="numeric" maxlength="2" :placeholder="t('分')">
+        <input v-model="schedHour" class="field" inputmode="numeric" maxlength="2" :placeholder="t('时')" @input="schedDirty = true">
+        <input v-model="schedMinute" class="field" inputmode="numeric" maxlength="2" :placeholder="t('分')" @input="schedDirty = true">
       </div>
       <button class="go" @click="saveSched">{{ t('保存') }}</button>
     </section>
@@ -487,6 +528,39 @@
       <p v-if="tzFollowsPhone" class="note">{{ t('WiFi 和 OCPP 都关闭时，手机连着期间充电桩的时区会跟随手机的时区，这里选的会被改回去。') }}</p>
     </section>
 
+    <section v-else-if="page === 'scrlang'" class="body">
+      <p class="note">{{ t('点一种语言，直接保存到充电桩，屏幕首页马上换过去，断电后仍然有效。只改充电桩屏幕，不改这个 App 的语言。') }}</p>
+      <div class="card">
+        <small class="verkey">{{ t('充电桩屏幕当前语言') }}</small>
+        <strong class="verval">{{ scrLangBrief }}</strong>
+      </div>
+      <p v-if="scrLangNote" class="note">{{ t(scrLangNote) }}</p>
+      <div class="zones">
+        <button v-for="item in SCREEN_LANGS" :key="item.id" class="zone"
+                :class="{ on: scrLangKnown && item.id === scrLang, busy: scrLangSaving && item.id === scrLangPick }"
+                :disabled="scrLangSaving || scrLangState !== 'ok'" @click="pickScrLang(item.id)">{{ item.name }}</button>
+      </div>
+      <p class="note">{{ t('设置、密码、键盘、时区、4G 和升级页一直是英文。') }}</p>
+    </section>
+
+    <section v-else-if="page === 'scrtheme'" class="body">
+      <p class="note">{{ t('点一种颜色，直接保存到充电桩，屏幕马上换色，断电后仍然有效。只改充电桩屏幕的充电界面，不改这个 App 的颜色。') }}</p>
+      <div class="card">
+        <small class="verkey">{{ t('充电桩屏幕当前颜色') }}</small>
+        <strong class="verval"><i v-if="scrThemeKnown" class="swatch" :style="{ background: screenThemeColor(scrTheme) }"></i>{{ scrThemeBrief }}</strong>
+      </div>
+      <p v-if="scrThemeNote" class="note">{{ t(scrThemeNote) }}</p>
+      <div class="zones themes">
+        <button v-for="item in SCREEN_THEMES" :key="item.id" class="zone theme"
+                :class="{ on: scrThemeKnown && item.id === scrTheme, busy: scrThemeSaving && item.id === scrThemePick }"
+                :style="{ '--theme': item.color }"
+                :disabled="scrThemeSaving || scrThemeState !== 'ok'" @click="pickScrTheme(item.id)">
+          <i class="swatch"></i>{{ t(item.name) }}<template v-if="item.id === SCREEN_THEME_DEFAULT"> ({{ t('默认') }})</template>
+        </button>
+      </div>
+      <p class="note">{{ t('密码、设置、键盘、时区、4G 和升级页不换颜色。充电桩的屏幕文件是旧版本时屏幕不会变色，颜色先存着，重新烧录屏幕文件后生效。') }}</p>
+    </section>
+
     <section v-else-if="page === 'lte'" class="body">
       <p v-if="lteState === 'unsupported'" class="note">{{ t('充电桩固件不支持 4G，需要升级到 2.6.16 或更高') }}</p>
       <p v-else-if="lteState === 'silent'" class="note">{{ t('充电桩没有应答，请重新读取') }}</p>
@@ -573,6 +647,21 @@
       <p v-if="lteMaybe" class="note">{{ t('打开遥测会关闭 4G') }}</p>
       <p class="note">{{ t(telemetryNote) }}</p>
     </section>
+
+    <nav v-if="tabBarOn" class="tabbar" role="tablist">
+      <button v-for="item in TABS" :key="item.id" class="tab" :class="{ on: page === item.id }"
+              role="tab" :aria-selected="page === item.id ? 'true' : 'false'" @click="goTab(item.id)">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+          <path v-if="item.id === 'charge'" fill="currentColor" d="M13.2 2 4.5 13.4h6.2L9.8 22l8.7-11.4h-6.2L13.2 2z"/>
+          <g v-else-if="item.id === 'sched'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.5" y="5" width="17" height="15.5" rx="3"/>
+            <path d="M3.5 10h17M8 3v4M16 3v4M12 13v3.2l2.2 1.4"/>
+          </g>
+          <path v-else fill="currentColor" d="M19.4 13.4a7.8 7.8 0 0 0 .1-1.4 7.8 7.8 0 0 0-.1-1.4l2-1.6-2-3.4-2.4 1a7.2 7.2 0 0 0-1.2-.7L15.2 3h-6.4L8.2 6a7.2 7.2 0 0 0-1.2.7l-2.4-1-2 3.4 2 1.6a7.8 7.8 0 0 0 0 2.8l-2 1.6 2 3.4 2.4-1a7.2 7.2 0 0 0 1.2.7L8.8 21h6.4l.6-2.9a7.2 7.2 0 0 0 1.2-.7l2.4 1 2-3.4-2-1.6zM12 15.2A3.2 3.2 0 1 1 12 8.8a3.2 3.2 0 0 1 0 6.4z"/>
+        </svg>
+        <span>{{ t(item.label) }}</span>
+      </button>
+    </nav>
   </main>
 </template>
 
@@ -585,9 +674,15 @@ import { liveRssi, liveRssiPending, wifiStatusText } from "./wifi-rssi.js";
 import { modverLabel, modverShort, parseModver, readModver } from "./modver.js";
 import { LTE_PROTOS, apnCommand, apnError, lteCellText, lteExclusive, lteHomeText, lteRegLabel, lteSetCommand, lteSignalText, lteSimLabel, lteStateLabel, lteSupported, parseApn, parseLteAck, parseLteBrief, parseLteCell, parseLteStat, parseLteSwitch, pollLteStat, readApn, readLte, rereadSwitches, sendLteSet } from "./lte.js";
 import { TZ_ZONES, parseSchedLine, parseTzAck, saveZone, tzIndex, tzLabel, tzSupported } from "./tz.js";
+import { SCREEN_LANGS, parseScrLangAck, readScreenLang, saveScreenLang, screenLangName } from "./scrlang.js";
+import {
+  SCREEN_THEMES, SCREEN_THEME_DEFAULT, parseScrThemeAck, readScreenTheme, saveScreenTheme,
+  screenThemeColor, screenThemeName,
+} from "./scrtheme.js";
 import { CLOCK_RESYNC_MS, CLOCK_RETRY_MS, chargerClock, parseTimeGet, readChargerTime, timeGetSupported } from "./charger-clock.js";
 import { heartbeatCarriesTime, parseTimeAck, phoneTzMinutes, runTimeSync, zoneRereadDue } from "./time-sync.js";
 import { AUTH_LOCK_SECONDS, authDecide, commandName, isOtaCommand, lockLeft, lockNote, parseAuthLine, pinOk, queueRefused, resendable } from "./auth.js";
+import { TABS, isTabPage, langReturn, rootBack, subpageBack, tabBarShown, tabTitle } from "./tabs.js";
 import { CARD_SLOTS, DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cardSlotsFor, cleanProfileName, ocppUrlOk, readPlan, sameSection, sectionSkip, splitCardLine, voltageLimitError, writePlan } from "./profile.js";
 
 const langIds = languages.map((item) => item.id);
@@ -624,16 +719,27 @@ const currentLangName = computed(() => {
 });
 const langFrom = ref("scan");
 function openLang() {
-  langFrom.value = page.value === "charge" ? "charge" : "scan";
+  /* 三个标签首页上都能选语言，选完回到原来那个标签。 */
+  langFrom.value = isTabPage(page.value) ? page.value : "scan";
+  if (page.value === "menu") menuPull++;
   page.value = "lang";
+}
+/* 离开语言页：回到进来时的标签（还连着的话），否则回扫描页。 */
+function leaveLang() {
+  const target = langReturn(langFrom.value, linkReady.value);
+  if (target === "scan") {
+    page.value = "scan";
+    startScan();
+  } else {
+    goTab(target);
+  }
 }
 function setLang(id) {
   if (langIds.indexOf(id) < 0) return;
   lang.value = id;
   applyDocLang(id);
   try { localStorage.setItem("ac06-lang", id); } catch (e) {}
-  page.value = langFrom.value === "charge" ? "charge" : "scan";
-  if (page.value === "scan") startScan();
+  leaveLang();
 }
 function t(text, vars) {
   return translate(lang.value, text, vars);
@@ -680,6 +786,11 @@ const schedMode = ref(0);
 const schedHour = ref("8");
 const schedMinute = ref("0");
 const schedArmed = ref(0);
+/* 桩里存着的预约（SCHED 行），首页和预约页顶上那一行按它显示。输入框里的是正在改的，
+ * schedDirty：用户动过、还没保存。切到别的标签再回来，或者这期间又来了 SCHED 行，
+ * 改了一半的不被桩里的值盖掉；保存成功或换了一台桩才清。 */
+const schedSaved = reactive({ known: false, mode: 0, hour: "8", minute: "0", armed: 0 });
+const schedDirty = ref(false);
 const clockReady = ref(false);
 const schedNote = ref("先连接 OCPP，等充电桩拿到服务器时间后才能预约。");
 const orders = ref([]);
@@ -769,17 +880,23 @@ let wifiClosedOcpp = false;
 /* 这次打开 WiFi（"wifi"）或遥测（"tel"）顺带关掉了 4G，保存成功的提示里要写上。 */
 let lteClosedBy = "";
 const schedLabel = computed(() => {
-  const hh = String(schedHour.value).padStart(2, "0");
-  const mm = String(schedMinute.value).padStart(2, "0");
-  if (schedMode.value === 2) return t("每天") + " " + hh + ":" + mm;
-  if (schedMode.value === 1 && schedArmed.value) return t("一次性") + " " + hh + ":" + mm;
-  if (schedMode.value === 1) return t("一次已执行");
+  if (!schedSaved.known) return "…";
+  const hh = String(schedSaved.hour).padStart(2, "0");
+  const mm = String(schedSaved.minute).padStart(2, "0");
+  if (schedSaved.mode === 2) return t("每天") + " " + hh + ":" + mm;
+  if (schedSaved.mode === 1 && schedSaved.armed) return t("一次性") + " " + hh + ":" + mm;
+  if (schedSaved.mode === 1) return t("一次已执行");
   return t("未预约");
 });
+function pickSchedMode(mode) {
+  schedMode.value = mode;
+  schedDirty.value = true;
+}
 
 const pageTitle = computed(() => {
   if (page.value === "scan") return "选择充电桩";
-  if (page.value === "menu") return "充电桩配置";
+  if (isTabPage(page.value)) return tabTitle(page.value);
+  if (page.value === "authinfo") return "管理员密码";
   if (page.value === "imax") return "最大电流";
   if (page.value === "plug") return "即插即充";
   if (page.value === "wifi") return "WiFi 配网";
@@ -799,6 +916,8 @@ const pageTitle = computed(() => {
   if (page.value === "ota") return "固件升级";
   if (page.value === "modver") return "蓝牙WiFi版本";
   if (page.value === "tz") return "时区设置";
+  if (page.value === "scrlang") return "屏幕语言";
+  if (page.value === "scrtheme") return "屏幕颜色";
   if (page.value === "netstop") return "断网停充";
   if (page.value === "reboot") return "重启";
   if (page.value === "profiles") return "一键配置";
@@ -1059,13 +1178,14 @@ function back() {
   }
   if (wifiJoining.value) return;
   if (page.value === "privacy") {
-    page.value = "scan";
-    startScan();
+    if (privacyFrom.value === "menu" && linkReady.value) {
+      goTab("menu");
+    } else {
+      page.value = "scan";
+      startScan();
+    }
   }
-  else if (page.value === "lang") {
-    page.value = langFrom.value === "charge" ? "charge" : "scan";
-    if (page.value === "scan") startScan();
-  }
+  else if (page.value === "lang") leaveLang();
   else if (page.value === "gate") {
     gateEnter.value = false;
     bridge().disconnect();
@@ -1080,7 +1200,7 @@ function back() {
       send("OTAABORT");
     }
     linkFast(false);
-    page.value = "menu";
+    goTab(subpageBack(tab.value));
   }
   else if (page.value === "profileRun") {
     profileRunId++;
@@ -1093,19 +1213,13 @@ function back() {
   else if (page.value === "profiles") {
     profileAskId.value = "";
     profileDeleteId.value = "";
-    page.value = "menu";
-    pullMenu();
+    goTab(subpageBack(tab.value));
   }
-  else if (page.value === "menu") {
-    menuPull++;
-    page.value = "charge";
-  }
-  else {
-    page.value = "menu";
-    pullMenu();
-  }
+  else if (rootBack(page.value)) goTab(rootBack(page.value));
+  else goTab(subpageBack(tab.value));
 }
-/* 手机侧滑和返回键。扫描页、充电页交给系统退出到桌面；其余页面与「返回」相同，回到上一级。 */
+/* 手机侧滑和返回键。扫描页、立即充电页交给系统退出到桌面；预约、设置两个标签回到立即充电；
+ * 其余页面与「返回」相同，回到上一级。 */
 window.evcTryBack = function () {
   if (page.value === "scan" || page.value === "charge") return false;
   back();
@@ -1222,9 +1336,69 @@ function pullMenu() {
 }
 function openMenu() {
   profiles.value = loadProfiles();
+  gateRemembered.value = /^\d{6}$/.test(savedGate());
   page.value = "menu";
   pullMenu();
 }
+/* ---- 2.8.0 底部标签栏（规则见 tabs.js） ----
+ * tab：最近停过的标签首页。二级页按“返回”回到它，所以从预约页进时区设置，返回还是预约页。
+ * 切标签只换 page：蓝牙不动，读到的状态和没保存的输入都在。进标签时各读一次自己的数据，
+ * 和原来从菜单点进去时发的命令一样。 */
+const tab = ref("charge");
+watch(page, (now) => {
+  if (isTabPage(now)) tab.value = now;
+});
+/* 手机键盘弹出时（焦点在文字输入框里）收起标签栏。 */
+const typing = ref(false);
+function typingTarget(el) {
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toUpperCase();
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag !== "INPUT") return false;
+  const kind = String(el.type || "text").toLowerCase();
+  return kind !== "checkbox" && kind !== "radio" && kind !== "file" && kind !== "button";
+}
+document.addEventListener("focusin", (event) => { typing.value = typingTarget(event.target); });
+document.addEventListener("focusout", () => { typing.value = false; });
+const tabBarOn = computed(() => tabBarShown(page.value, linkReady.value, gateState.value === "ok", typing.value));
+function scrollTop() {
+  try { window.scrollTo(0, 0); } catch (e) {}
+}
+function goTab(id) {
+  if (!isTabPage(id)) return;
+  if (page.value === id) {
+    scrollTop();
+    return;
+  }
+  if (page.value === "menu") menuPull++;
+  if (id === "menu") openMenu();
+  else if (id === "sched") openSched();
+  else page.value = "charge";
+  scrollTop();
+}
+/* 设置 → 关于 → 管理员密码：只看、只清这台手机上记住的那个，不发命令。 */
+const gateRemembered = ref(false);
+const authInfoNote = ref("");
+function openAuthInfo() {
+  menuPull++;
+  gateRemembered.value = /^\d{6}$/.test(savedGate());
+  authInfoNote.value = "";
+  page.value = "authinfo";
+}
+function clearRememberedGate() {
+  forgetGate();
+  gateRemembered.value = /^\d{6}$/.test(savedGate());
+  authInfoNote.value = "已清除。下次连接这台充电桩要重新输入密码。";
+}
+/* 隐私协议：扫描页和设置页都能进，返回回到原处。 */
+const privacyFrom = ref("scan");
+function openPrivacy(from) {
+  privacyFrom.value = from === "menu" ? "menu" : "scan";
+  if (page.value === "menu") menuPull++;
+  page.value = "privacy";
+}
+/* 设置 → 关于里显示的 App 版本：编译时从 AndroidManifest.xml 的 versionName 取（vite.config.js）。 */
+const appVersion = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
 /* 蓝牙/WiFi 模组版本（固件 2.6.12 起，命令和格式见 modver.js）。一次连接读到之后留着，
  * 菜单再打开不重读；没读到（旧固件、模组没回答）时每次打开菜单再试，版本页上可以手动重读。 */
 const modverState = ref("idle");      /* idle / asking / ok / unsupported / empty */
@@ -1681,6 +1855,154 @@ async function pickZone(zone) {
   clkNow.value = Date.now();
   if (linkReady.value && page.value === "tz") readClk();
 }
+/* 屏幕语言（命令见 scrlang.js）。进页面读一次 SCRLANGGET；点一种就存：SCRLANGSET，再
+ * SCRLANGGET 读回来确认。界面上的高亮、菜单上的字都以读回来的为准。 */
+const scrLang = ref(0);
+const scrLangKnown = ref(false);
+const scrLangState = ref("idle");       /* idle / reading / ok / silent */
+const scrLangSaving = ref(false);
+const scrLangPick = ref(null);
+const scrLangNote = ref("");
+let scrLangRun = 0;
+let scrWait = null;
+const scrLangBrief = computed(() => (scrLangKnown.value ? screenLangName(scrLang.value) : "›"));
+function askScr(command, accept, ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (scrWait === finish) scrWait = null;
+      resolve(null);
+    }, ms);
+    function finish(line) {
+      if (!accept(line)) return;
+      clearTimeout(timer);
+      scrWait = null;
+      resolve(line);
+    }
+    scrWait = finish;
+    send(command);
+  });
+}
+function resetScrLang() {
+  scrLangRun += 1;
+  scrWait = null;
+  scrLangSaving.value = false;
+  scrLangPick.value = null;
+  scrLangNote.value = "";
+}
+async function openScrLang() {
+  menuPull++;
+  resetScrLang();
+  page.value = "scrlang";
+  const token = scrLangRun;
+  const alive = () => token === scrLangRun && linkReady.value && page.value === "scrlang";
+  scrLangState.value = "reading";
+  scrLangNote.value = "正在读取";
+  const result = await readScreenLang({ ask: askScr, alive });
+  if (token !== scrLangRun || result.state === "gone") return;
+  if (result.state === "ok") {
+    scrLang.value = result.lang;
+    scrLangKnown.value = true;
+    scrLangState.value = "ok";
+    scrLangNote.value = "";
+  }
+  else {
+    scrLangState.value = "silent";
+    scrLangNote.value = "充电桩没有应答。充电桩固件可能还不支持屏幕语言，需要升级后再设置";
+  }
+}
+async function pickScrLang(id) {
+  if (scrLangSaving.value || scrLangState.value !== "ok") return;
+  if (scrLangKnown.value && id === scrLang.value) {
+    scrLangNote.value = "";
+    return;
+  }
+  const token = ++scrLangRun;
+  const alive = () => token === scrLangRun && linkReady.value && page.value === "scrlang";
+  scrLangSaving.value = true;
+  scrLangPick.value = id;
+  scrLangNote.value = "正在保存";
+  const result = await saveScreenLang({ ask: askScr, alive, lang: id });
+  if (token !== scrLangRun) return;
+  scrLangSaving.value = false;
+  scrLangPick.value = null;
+  if (result.state === "gone") {
+    scrLangNote.value = "";
+    return;
+  }
+  if (Number.isInteger(result.lang)) {
+    scrLang.value = result.lang;
+    scrLangKnown.value = true;
+  }
+  if (result.state === "ok") scrLangNote.value = "已保存，断电后仍然有效";
+  else if (result.state === "silent") scrLangNote.value = "充电桩没有应答，没有保存";
+  else scrLangNote.value = "没有保存";
+}
+/* 屏幕颜色（命令见 scrtheme.js）。和屏幕语言同一种做法：进页面读一次 SCRTHEMEGET；点一种
+ * 就存：SCRTHEMESET，再 SCRTHEMEGET 读回来确认。等应答用的是屏幕语言那一个 scrWait
+ * （两页不会同时开着）。 */
+const scrTheme = ref(SCREEN_THEME_DEFAULT);
+const scrThemeKnown = ref(false);
+const scrThemeState = ref("idle");      /* idle / reading / ok / silent */
+const scrThemeSaving = ref(false);
+const scrThemePick = ref(null);
+const scrThemeNote = ref("");
+let scrThemeRun = 0;
+const scrThemeBrief = computed(() => (scrThemeKnown.value ? t(screenThemeName(scrTheme.value)) : "›"));
+function resetScrTheme() {
+  scrThemeRun += 1;
+  scrWait = null;
+  scrThemeSaving.value = false;
+  scrThemePick.value = null;
+  scrThemeNote.value = "";
+}
+async function openScrTheme() {
+  menuPull++;
+  resetScrTheme();
+  page.value = "scrtheme";
+  const token = scrThemeRun;
+  const alive = () => token === scrThemeRun && linkReady.value && page.value === "scrtheme";
+  scrThemeState.value = "reading";
+  scrThemeNote.value = "正在读取";
+  const result = await readScreenTheme({ ask: askScr, alive });
+  if (token !== scrThemeRun || result.state === "gone") return;
+  if (result.state === "ok") {
+    scrTheme.value = result.theme;
+    scrThemeKnown.value = true;
+    scrThemeState.value = "ok";
+    scrThemeNote.value = "";
+  }
+  else {
+    scrThemeState.value = "silent";
+    scrThemeNote.value = "充电桩没有应答。充电桩固件可能还不支持屏幕颜色，需要升级后再设置";
+  }
+}
+async function pickScrTheme(id) {
+  if (scrThemeSaving.value || scrThemeState.value !== "ok") return;
+  if (scrThemeKnown.value && id === scrTheme.value) {
+    scrThemeNote.value = "";
+    return;
+  }
+  const token = ++scrThemeRun;
+  const alive = () => token === scrThemeRun && linkReady.value && page.value === "scrtheme";
+  scrThemeSaving.value = true;
+  scrThemePick.value = id;
+  scrThemeNote.value = "正在保存";
+  const result = await saveScreenTheme({ ask: askScr, alive, theme: id });
+  if (token !== scrThemeRun) return;
+  scrThemeSaving.value = false;
+  scrThemePick.value = null;
+  if (result.state === "gone") {
+    scrThemeNote.value = "";
+    return;
+  }
+  if (Number.isInteger(result.theme)) {
+    scrTheme.value = result.theme;
+    scrThemeKnown.value = true;
+  }
+  if (result.state === "ok") scrThemeNote.value = "已保存，断电后仍然有效";
+  else if (result.state === "silent") scrThemeNote.value = "充电桩没有应答，没有保存";
+  else scrThemeNote.value = "没有保存";
+}
 function openModver() {
   menuPull++;
   page.value = "modver";
@@ -2066,6 +2388,14 @@ function resetCharge() {
   resetTz();
   resetClk();
   tzKnown.value = false;
+  schedSaved.known = false;
+  schedDirty.value = false;
+  resetScrLang();
+  scrLangKnown.value = false;
+  scrLangState.value = "idle";
+  resetScrTheme();
+  scrThemeKnown.value = false;
+  scrThemeState.value = "idle";
   wifiSaved.value = "未配置热点";
   plug.value = false;
   plugDip.value = false;
@@ -2441,6 +2771,7 @@ function applyAck(line) {
     return;
   }
   if (line.indexOf("SCHEDSET") >= 0 && line.indexOf("OK") >= 0) {
+    schedDirty.value = false;
     schedNote.value = "已保存，断电后仍然有效";
     send("SCHEDGET");
     return;
@@ -3117,6 +3448,24 @@ function applyLine(line) {
     if (typeof modverWait === "function") modverWait(line);
     return;
   }
+  if (parseScrLangAck(line) !== null) {
+    const got = parseScrLangAck(line);
+    if (typeof scrWait === "function") scrWait(line);
+    else if (got.kind === "get" && got.lang !== null && !scrLangSaving.value) {
+      scrLang.value = got.lang;
+      scrLangKnown.value = true;
+    }
+    return;
+  }
+  if (parseScrThemeAck(line) !== null) {
+    const got = parseScrThemeAck(line);
+    if (typeof scrWait === "function") scrWait(line);
+    else if (got.kind === "get" && got.theme !== null && !scrThemeSaving.value) {
+      scrTheme.value = got.theme;
+      scrThemeKnown.value = true;
+    }
+    return;
+  }
   if (parseTzAck(line) !== null) {
     if (typeof tzWait === "function") tzWait(line);
     return;
@@ -3194,10 +3543,17 @@ function applyLine(line) {
       clockReady.value = part[1] === "1";
       tzMin.value = parseInt(part[2], 10) || 0;
       tzKnown.value = true;
-      schedMode.value = parseInt(part[3], 10) || 0;
-      schedHour.value = part[4];
-      schedMinute.value = part[5];
-      schedArmed.value = parseInt(part[6], 10) || 0;
+      schedSaved.known = true;
+      schedSaved.mode = parseInt(part[3], 10) || 0;
+      schedSaved.hour = part[4];
+      schedSaved.minute = part[5];
+      schedSaved.armed = parseInt(part[6], 10) || 0;
+      if (!schedDirty.value) {
+        schedMode.value = schedSaved.mode;
+        schedHour.value = part[4];
+        schedMinute.value = part[5];
+      }
+      schedArmed.value = schedSaved.armed;
       menuGot.sched = true;
       if (page.value === "sched") {
         schedNote.value = clockReady.value
@@ -3400,7 +3756,6 @@ button, input { font: inherit; color: inherit; }
 .pile-mark { width: 48px; height: 64px; flex: none; color: #f2f2f2; }
 .device.pile em { flex: none; color: #9a9a9a; font-size: 13px; font-weight: 500; }
 .lang { background: none; border: 1px solid #f5c400; color: #f5c400; border-radius: 999px; padding: 6px 12px; }
-.top-actions { display: flex; align-items: center; gap: 10px; flex: none; }
 .wait { display: flex; align-items: center; gap: 12px; }
 .wait p { margin: 0; }
 .spin { width: 22px; height: 22px; flex: none; border: 3px solid #333; border-top-color: #f5c400; border-radius: 50%; animation: spin 0.8s linear infinite; }
@@ -3413,7 +3768,6 @@ button:disabled, input:disabled { opacity: 0.45; }
 .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 22px; }
 .logo { display: block; }
 .sub { margin: 4px 0 0; font-size: 22px; font-weight: 650; }
-.gear { width: 44px; height: 44px; flex: none; display: grid; place-items: center; padding: 0; border-radius: 14px; border: 1px solid #2a2a2a; background: #111; color: #f5c400; }
 .text { background: none; border: 0; color: #f5c400; padding: 8px 0; }
 .alone { display: block; margin: 18px auto 0; }
 .body { display: flex; flex-direction: column; gap: 12px; }
@@ -3476,6 +3830,13 @@ select.field option { background: #111; color: #fff; }
 .zone.busy { border-color: #f5c400; }
 .zone:disabled { opacity: 0.6; }
 .zone.on:disabled { opacity: 1; }
+/* 屏幕颜色：每格前面一个色块；选中的那一格用它自己的颜色做底。 */
+.swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-inline-end: 6px; vertical-align: -2px; background: var(--theme, #f5c400); border: 1px solid rgba(255, 255, 255, 0.5); }
+.zones.themes { grid-template-columns: repeat(2, 1fr); direction: inherit; }
+.zone.theme { white-space: normal; padding: 12px 6px; }
+.zone.theme.on { background: var(--theme); border-color: var(--theme); }
+.zone.theme.on .swatch { border-color: #000; background: #000; }
+.zone.theme.busy { border-color: var(--theme); }
 .pair, .links { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .links { grid-template-columns: repeat(3, 1fr); }
 .go, .ghost, .links button, .pair button { border-radius: 14px; padding: 14px 8px; border: 1px solid #f5c400; }
@@ -3495,4 +3856,28 @@ select.field option { background: #111; color: #fff; }
 .profile-log .ok { color: #f5c400; }
 .profile-log .bad { color: #fff; }
 .profile-log .run { opacity: 0.72; }
+/* 2.8.0 底部标签栏：固定在底部，让出 iOS 的 Home 条（safe-area），旧 WebView 不认 env() 时用前一句。 */
+.app.tabbed { padding-bottom: 96px; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, 1fr);
+  background: #0a0a0a; border-top: 1px solid #262626;
+  padding: 4px 8px 8px; padding: 4px calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); }
+.tab { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 56px; padding: 6px 2px 2px; background: none; border: 0; color: #8c8c8c; font-size: 12px; line-height: 1.2;
+  -webkit-tap-highlight-color: transparent; }
+.tab svg { width: 24px; height: 24px; flex: none; }
+.tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab.on { color: #f5c400; font-weight: 700; }
+.tab.on::before { content: ""; position: absolute; top: -5px; left: 28%; right: 28%; height: 3px; border-radius: 0 0 3px 3px; background: #f5c400; }
+.tab:active { opacity: 0.7; }
+/* 设置页：分组列表 */
+.settings { gap: 8px; }
+.group-title { margin: 12px 4px 0; color: #f5c400; font-size: 13px; letter-spacing: 0.06em; }
+.group-title:first-child { margin-top: 0; }
+.group { display: flex; flex-direction: column; background: #111; border: 1px solid #2a2a2a; border-radius: 16px; overflow: hidden; }
+.group > .card.device { border: 0; border-radius: 0; background: transparent; padding: 13px 16px; }
+.group > .card.device + .card.device { border-top: 1px solid #232323; }
+.group > .card.device small { font-size: 13px; }
+.group > .card.device em:not(.ver) { flex: none; white-space: nowrap; }
+.group > button.card.device:active { background: #1a1a1a; }
+.settings .alone { margin-top: 10px; }
 </style>

@@ -240,6 +240,17 @@
         if (num >= -720 && num <= 840) pile.tz = num;
         return ["ACK TZSET OK"];
       case "TZGET": return ["ACK TZ " + pile.tz];
+      /* 屏幕语言（0–4）和屏幕颜色（0 红 … 6 紫，默认 2 黄），写法和固件 wb2.c 一样。 */
+      case "SCRLANGGET": return ["ACK SCRLANG " + (pile.scrLang || 0)];
+      case "SCRLANGSET":
+        if (!/^[0-4]$/.test(arg[0] || "") || arg.length !== 1) return ["ACK SCRLANGSET FAIL"];
+        pile.scrLang = Number(arg[0]);
+        return ["ACK SCRLANGSET OK"];
+      case "SCRTHEMEGET": return ["ACK SCRTHEME " + (pile.scrTheme === undefined ? 2 : pile.scrTheme)];
+      case "SCRTHEMESET":
+        if (!/^[0-6]$/.test(arg[0] || "") || arg.length !== 1) return ["ACK SCRTHEMESET FAIL"];
+        pile.scrTheme = Number(arg[0]);
+        return ["ACK SCRTHEMESET OK"];
       case "TIMEGET": return ["ACK TIME " + Math.floor(Date.now() / 1000) + " " + pile.tz];
       case "CFGGET":
         return ["CFG " + pile.cfg.over + " " + pile.cfg.under + " 10.50 7.50 4.50 1.50 " +

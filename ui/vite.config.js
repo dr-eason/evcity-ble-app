@@ -26,8 +26,22 @@ function oneHtml() {
   };
 }
 
+/* 设置 → 关于里显示的 App 版本，取 AndroidManifest.xml 的 versionName（iOS 用同一份界面）。 */
+function appVersion() {
+  try {
+    const manifest = readFileSync(resolve("../AndroidManifest.xml"), "utf8");
+    const m = manifest.match(/android:versionName="([^"]+)"/);
+    return m ? m[1] : "";
+  } catch (e) {
+    return "";
+  }
+}
+
 export default defineConfig({
   base: "./",
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion()),
+  },
   plugins: [vue(), oneHtml()],
   build: {
     target: "chrome61",
