@@ -149,7 +149,7 @@
           <em>{{ plugDip ? t('拨码开') : (plug ? t('开') : t('关')) }}</em>
         </button>
         <button class="card device" @click="openGbStop">
-          <span><strong>{{ t('新国标6秒停充') }}</strong><small>{{ t('停止时先通知车辆，最多等 6 秒再断开') }}</small></span>
+          <span><strong>{{ t('严格模式') }}</strong><small>{{ t('按 GB/T 18487.1-2023 的停止和故障时序') }}</small></span>
           <em>{{ gbStopKnown ? (gbStopOn ? t('开') : t('关')) : '›' }}</em>
         </button>
         <button class="card device" @click="openCards">
@@ -621,14 +621,14 @@
     <section v-else-if="page === 'gbstop'" class="body">
       <label class="card toggle">
         <span>
-          <strong>{{ t('开启新国标6秒停充') }}</strong>
-          <small>{{ t('停止时先通知车辆，最多等 6 秒再断开') }}</small>
+          <strong>{{ t('开启严格模式') }}</strong>
+          <small>{{ t('按 GB/T 18487.1-2023 的停止和故障时序') }}</small>
         </span>
         <input type="checkbox" :checked="gbStopOn" :disabled="gbStopSaving || gbStopState !== 'ok'"
                @change="setGbStop($event.target.checked)">
       </label>
       <p v-if="gbStopNote" class="note">{{ t(gbStopNote) }}</p>
-      <p class="note">{{ t('打开后，停止充电时充电桩先通知车辆，等车辆停止取电再断开继电器，最多等 6 秒；车辆提前停下来就提前断开。关闭时（默认）一停止就立即断开。出现安全故障或拔枪时始终立即断开。断电后仍然有效。') }}</p>
+      <p class="note">{{ t('打开后，充电桩按 GB/T 18487.1-2023 的停止和故障时序工作：停止充电时先把 CP 切到 +12 V，等车辆断开 S2 再断开接触器，最多等 6 秒；充电中 CP 异常或保护接地断开时，100 毫秒内断开接触器。关闭时（默认）一停止就立即断开接触器，CP 异常和保护接地断开按原来的时间断开（约 0.3 秒）。两种设置下，车辆暂停（CP 9 V）和拔枪都在 100 毫秒内断开，车辆再次请求时恢复充电。安全故障始终立即断开。断电后仍然有效。') }}</p>
     </section>
 
     <section v-else-if="page === 'phase'" class="body">
@@ -1040,7 +1040,7 @@ const pageTitle = computed(() => {
   if (page.value === "scrlang") return "屏幕语言";
   if (page.value === "scrtheme") return "屏幕颜色";
   if (page.value === "phase") return "相位";
-  if (page.value === "gbstop") return "新国标6秒停充";
+  if (page.value === "gbstop") return "严格模式";
   if (page.value === "netstop") return "断网停充";
   if (page.value === "reboot") return "重启";
   if (page.value === "profiles") return "一键配置";
@@ -2370,7 +2370,7 @@ async function pickScrTheme(id) {
   else if (result.state === "silent") saveBtns.silent("scrtheme");
   else saveBtns.fail("scrtheme");
 }
-/* 新国标 6 秒停充（命令和规矩见 gbstop.js）。
+/* 严格模式（原名新国标 6 秒停充；命令和规矩见 gbstop.js）。
  * 设置页和相位同一种做法：进页面读一次 GBSTOPGET；点开关就存：GBSTOPSET，再 GBSTOPGET 读回来
  * 确认，等应答用屏幕语言那一个 scrWait。桩每秒的 LIVE 行里也带着这个设置，菜单上的字跟着它走。
  * 首页的停止按钮：设置开着、正在充电时点了停止，按钮置灰并倒计时 6 秒，这期间再点不发；
@@ -3339,7 +3339,7 @@ function applyStat(line) {
   const base = faultFirst ? 3 : 2;
   let faultToken = faultFirst ? part[2] : "NONE";
   if (states[part[1]]) stateText.value = states[part[1]];
-  /* 新国标 6 秒停充：状态已经不是充电中了（停下来了、出故障了），停止按钮不用再等。 */
+  /* 严格模式：状态已经不是充电中了（停下来了、出故障了），停止按钮不用再等。 */
   chargeToken = part[1];
   stopState(stopGuard, gbChargingState(chargeToken), Date.now());
   stopRefresh(Date.now());
@@ -4196,7 +4196,7 @@ function applyLine(line) {
     wifiRssiPending = liveRssiPending(line);
     showWifiStatus();
     {
-      /* 新国标 6 秒停充：设置、是不是正在等车、还剩多久（旧固件没有这三个字段）。 */
+      /* 严格模式：设置、是不是正在等车、还剩多久（旧固件没有这三个字段）。 */
       const gb = liveGbStop(line);
       if (gb) {
         if (!gbStopSaving.value) {

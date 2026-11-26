@@ -1,4 +1,4 @@
-/* 新国标 6 秒停充（GBSTOPGET / GBSTOPSET、LIVE 行里的等车状态、首页停止按钮的倒计时）的主机测试：
+/* 严格模式（原名新国标 6 秒停充；GBSTOPGET / GBSTOPSET、LIVE 行里的等车状态、首页停止按钮的倒计时）的主机测试：
  *
  *     node --test AC06/tools/ble-finder/ui/test/gbstop.test.mjs
  *
@@ -263,10 +263,15 @@ test("12 种语言的文案都齐，不是中文键、也不是英文原样", ()
       assert.ok(!/[一-鿿]/.test(out) || lang === "ja", lang + " 里还有汉字: " + key);
       if (lang !== "en") assert.notEqual(gbStopPacks[lang][key], gbStopPacks.en[key], lang + " 用了英文: " + key);
     }
-    /* 6 秒这个数每种语言都带着。 */
-    assert.match(translate(lang, "停止时先通知车辆，最多等 6 秒再断开"), /6|৬/, lang);
+    /* 标准号每种语言都原样带着；页面说明里 6 秒这个数也都在。 */
+    assert.ok(translate(lang, "按 GB/T 18487.1-2023 的停止和故障时序").includes("GB/T 18487.1-2023"), lang);
+    assert.ok(translate(lang, GB_STOP_KEYS[3]).includes("GB/T 18487.1-2023"), lang);
+    assert.match(translate(lang, GB_STOP_KEYS[3]), /6|৬/, lang);
+    assert.match(translate(lang, GB_STOP_KEYS[3]), /100/, lang);
+    /* 旧名字（新国标 6 秒停充 / GB 6-second stop）不再出现在界面上。 */
+    for (const key of GB_STOP_KEYS.slice(0, 3)) assert.ok(!/GB 6|GB-Stopp|GB en 6|GB em 6|GB ৬|GB за 6/.test(translate(lang, key)), lang + ": " + key);
   }
-  assert.equal(translate("zh", "开启新国标6秒停充"), "开启新国标6秒停充");
+  assert.equal(translate("zh", "开启严格模式"), "开启严格模式");
   assert.equal(translate("zh", "等待车端关闭，请勿重复点击停止"), "等待车端关闭，请勿重复点击停止");
   assert.equal(translate("en", "等待车端关闭，请勿重复点击停止"), "Waiting for the vehicle to stop. Do not tap Stop again");
 });
@@ -291,17 +296,17 @@ test("App.vue：首页停止按钮、设置页、菜单入口；用到的字符�
   assert.ok(at > 0 && at < script.indexOf('if (line.indexOf("ACK ") === 0) {'));
   /* 设置页。 */
   const block = template.match(/<section v-else-if="page === 'gbstop'"[\s\S]*?<\/section>/);
-  assert.ok(block, "App.vue 里没有新国标6秒停充的设置页");
+  assert.ok(block, "App.vue 里没有严格模式的设置页");
   assert.match(block[0], /:checked="gbStopOn" :disabled="gbStopSaving \|\| gbStopState !== 'ok'"/);
   assert.match(script, /readGbStop\(\{ ask: askScr, alive \}\)/);
   assert.match(script, /saveGbStop\(\{ ask: askScr, alive, on: !!on \}\)/);
   assert.ok(!/send\("GBSTOP/.test(script));
-  assert.match(script, /if \(page\.value === "gbstop"\) return "新国标6秒停充";/);
+  assert.match(script, /if \(page\.value === "gbstop"\) return "严格模式";/);
   /* 菜单：在充电设置里，挨着即插即充。 */
   assert.match(template, /@click="openGbStop"/);
   const group = SETTINGS_GROUPS.find((item) => item.title === "充电设置");
   assert.equal(group.items.indexOf("openGbStop"), group.items.indexOf("page = 'plug'") + 1);
-  const used = new Set(["新国标6秒停充", "停止时先通知车辆，最多等 6 秒再断开", "等待车端关闭，请勿重复点击停止", "停止", "开", "关"]);
+  const used = new Set(["严格模式", "按 GB/T 18487.1-2023 的停止和故障时序", "等待车端关闭，请勿重复点击停止", "停止", "开", "关"]);
   for (const m of block[0].matchAll(/t\('([^']+)'\)/g)) used.add(m[1]);
   for (const m of script.matchAll(/gbStopNote\.value = "([^"]+)"/g)) used.add(m[1]);
   assert.ok(used.has("充电桩没有应答。充电桩固件可能还不支持这个设置，需要升级后再设置"));

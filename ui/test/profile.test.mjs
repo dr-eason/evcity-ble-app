@@ -42,7 +42,7 @@ function fwAtLeast(fw, need) {
   return true;
 }
 
-/* 新国标 6 秒停充（GBSTOPGET / GBSTOPSET）：这一版固件加的，版本号还是 3.0.0。fw "3.0.0" 的假桩
+/* 严格模式（原名新国标 6 秒停充，GBSTOPGET / GBSTOPSET）：这一版固件加的，版本号还是 3.0.0。fw "3.0.0" 的假桩
  * 有这两条命令；noGb：更早的 3.0.0（版本号一样、没有这两条命令，一声不吭）。更旧的固件都没有，
  * 所以下面老用例里 2.8.0 及更早的桩，跳过的项里都多一个 "gbstop"。 */
 function makePile(fw, slots = 5, extra) {
@@ -1053,14 +1053,14 @@ test("新提示 12 种语言都有：跳过原因、相位 BUSY、导出导入�
 });
 
 
-/* ---------------------------------------------------------------- 新国标 6 秒停充 */
+/* ---------------------------------------------------------------- 严格模式（字段还叫 gbStop） */
 
-test("新国标6秒停充：在即插即充后面，可有可无，桩不回按不支持跳过；格式号没有加", () => {
+test("严格模式：在即插即充后面，可有可无，桩不回按不支持跳过；格式号没有加", () => {
   const keys = SECTIONS.map((item) => item.key);
   assert.equal(keys.indexOf("gbstop"), keys.indexOf("plug") + 1);
   assert.equal(keys.length, 17);
   const section = SECTIONS.find((item) => item.key === "gbstop");
-  assert.deepEqual(section, { key: "gbstop", name: "新国标6秒停充", since: [3, 0, 0], optional: true, quiet: true });
+  assert.deepEqual(section, { key: "gbstop", name: "严格模式", since: [3, 0, 0], optional: true, quiet: true });
   assert.equal(PROFILE_FORMAT, 2);
   assert.equal(blankBody().gbStop, null);
   for (const fw of ["2.8.0", "2.6.16", "", "—"]) {
@@ -1080,7 +1080,7 @@ test("新国标6秒停充：在即插即充后面，可有可无，桩不回按�
   }
 });
 
-test("新国标6秒停充的 readPlan / writePlan / sameSection", () => {
+test("严格模式的 readPlan / writePlan / sameSection", () => {
   const read = readPlan("gbstop").list;
   assert.equal(read.length, 1);
   assert.equal(read[0].command, "GBSTOPGET");
@@ -1196,7 +1196,7 @@ test("导出 / 导入：带这一项和不带这一项的文件都能导入；�
   assert.equal(bodyProblem(Object.assign({}, withField, { gbStop: null })), "");
   assert.equal(bodyProblem(Object.assign({}, withField, { gbStop: false })), "");
   for (const bad of [1, 0, "1", "true", {}, []]) {
-    assert.equal(bodyProblem(Object.assign({}, withField, { gbStop: bad })), "新国标6秒停充", JSON.stringify(bad));
+    assert.equal(bodyProblem(Object.assign({}, withField, { gbStop: bad })), "严格模式", JSON.stringify(bad));
   }
   /* 往返：导出再导入，这一项还在。 */
   let seq = 0;
@@ -1233,8 +1233,8 @@ test("导出 / 导入：带这一项和不带这一项的文件都能导入；�
   const badFile = JSON.stringify([makeProfile("坏", Object.assign({}, withField, { gbStop: "on" }), 1, "b")]);
   const refused = importText(badFile, [], newId);
   assert.equal(refused.error, "第 {n} 份配置里的「{name}」不能用，整个文件没有导入");
-  assert.equal(refused.vars.name, "新国标6秒停充");
+  assert.equal(refused.vars.name, "严格模式");
   for (const lang of languages.map((item) => item.id).filter((id) => id !== "zh")) {
-    assert.notEqual(translate(lang, "新国标6秒停充"), "新国标6秒停充", lang);
+    assert.notEqual(translate(lang, "严格模式"), "严格模式", lang);
   }
 });

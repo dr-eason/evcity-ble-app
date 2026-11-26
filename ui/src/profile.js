@@ -15,10 +15,10 @@ export const SECTIONS = [
   { key: "safety", name: "安全管理参数" },
   { key: "imax", name: "最大电流" },
   { key: "plug", name: "即插即充" },
-  /* 新国标 6 秒停充（GBSTOPGET / GBSTOPSET，gbstop.js）。这一版固件加的，版本号没有变（还是
+  /* 严格模式（原名新国标 6 秒停充；GBSTOPGET / GBSTOPSET，gbstop.js）。这一版固件加的，版本号没有变（还是
    * 3.0.0），所以不能只按版本判断：更早的 3.0.0 对这两条命令一声不吭，按“固件还不支持”跳过
    * （quiet）。旧 App 存的备份里没有这一项，下发时跳过（optional）。 */
-  { key: "gbstop", name: "新国标6秒停充", since: [3, 0, 0], optional: true, quiet: true },
+  { key: "gbstop", name: "严格模式", since: [3, 0, 0], optional: true, quiet: true },
   { key: "cards", name: "本地IC卡" },
   { key: "sched", name: "预约充电" },
   { key: "qr", name: "屏幕二维码" },
@@ -48,7 +48,7 @@ export const SECTIONS = [
 /* 备份记录的格式版本。
  *   1（记录里没有 format 字段）：2.8.0 之前的 App 存的，body 是前 11 组，可能还有 apn。
  *   2：多了 lte、scrLang、scrTheme、phase（桩不支持时是 null），记录里带 format: 2。
- * 后来又多了 gbStop（新国标 6 秒停充，true / false，桩不支持时是 null）。它是可有可无的一项，
+ * 后来又多了 gbStop（严格模式，原名新国标 6 秒停充，字段名没有改，旧文件照样能导入；true / false，桩不支持时是 null）。它是可有可无的一项，
  * 格式号没有加：没有这一项的旧备份照样能导入、下发（跳过这一项）；带这一项的备份拿到旧 App 上
  * 也能导入（旧 App 不认识这个字段，不下发它）。 */
 export const PROFILE_FORMAT = 2;
@@ -162,7 +162,7 @@ export function blankBody() {
     scrLang: null,          /* 屏幕语言 0–4（scrlang.js），从 2.8.0 起的桩上读到才有 */
     scrTheme: null,         /* 屏幕颜色 0–6（scrtheme.js），从 2.8.0 起的桩上读到才有 */
     phase: null,            /* 相位 0 单相、1 三相（phase.js） */
-    gbStop: null,           /* 新国标 6 秒停充 true / false（gbstop.js），桩支持才有 */
+    gbStop: null,           /* 严格模式 true / false（gbstop.js），桩支持才有 */
   };
 }
 
