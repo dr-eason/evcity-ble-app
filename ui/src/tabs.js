@@ -33,7 +33,8 @@ export function tabTitle(page) {
   return found ? found.label : "";
 }
 
-/* 手机返回键在标签首页上：预约、设置回到立即充电；立即充电返回 null，交给系统退到桌面。 */
+/* 标签首页往回退到哪个标签：预约、设置回到立即充电；立即充电返回 null（没有「返回」按钮，
+ * 系统返回键在这一页由 App.vue 的 evcTryBack 断开蓝牙、回扫描列表，不退出应用）。 */
 export function rootBack(page) {
   if (page === "sched" || page === "menu") return "charge";
   return null;

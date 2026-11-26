@@ -26,7 +26,8 @@ export function tabBarShown(page, linked, authed, typing) {
   return isTabPage(page) && !!linked && !!authed && !typing;
 }
 
-/* 手机返回键在标签首页上：记录、设置回到立即充电；立即充电返回 null，交给系统。 */
+/* 标签首页往回退到哪个标签：记录、设置回到立即充电；立即充电返回 null（没有「返回」按钮，
+ * 系统返回键在这一页由 M01App.vue 的 tryBack 断开蓝牙、回扫描列表，不退出应用）。 */
 export function rootBack(page) {
   if (page === "orders" || page === "menu") return "charge";
   return null;

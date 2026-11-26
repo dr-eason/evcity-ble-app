@@ -1256,10 +1256,14 @@ function back() {
     goTab(subpageBack(page.value, tab.value));
   }
 }
-/* 手机侧滑和返回键（外壳的 window.evcTryBack 在 M01 模块时转到这里）。立即充电、连接中交给
- * 系统；其余与「返回」相同。 */
+/* 手机侧滑和返回键（外壳的 window.evcTryBack 在 M01 模块时转到这里）。总是返回 true，不让
+ * Android 退出应用：立即充电页和「断开蓝牙」一样 disconnect()，手机那一层报 page "scan" 后外壳
+ * 回到扫描列表；连接中、密码页由 back() 断开；记录、设置两个标签回立即充电；其余回上一级。 */
 function tryBack() {
-  if (page.value === "charge" || page.value === "link") return false;
+  if (page.value === "charge") {
+    disconnect();
+    return true;
+  }
   back();
   return true;
 }

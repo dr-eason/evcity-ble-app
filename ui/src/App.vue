@@ -1109,6 +1109,7 @@ let linkKind = "";            /* 这次连接认出来的类型，认出来之�
 let probing = null;           /* 认不出名字的桩：先连上看状态行，{ item, timer } */
 let switching = null;         /* 正在换模块：{ type, item, opts, timer } */
 let settling = false;         /* 断开以后、重新连之前，手机那一层还会报几条，不交给页面 */
+let switchAbort = false;      /* 换模块的半路上按了系统返回：不再重连，收拾完留在扫描页 */
 let noteAfterDrop = "";       /* 下一条“蓝牙已断开”换成这一句 */
 const PROBE_MS = 10000;
 function setProfile(type) {
@@ -1191,6 +1192,7 @@ function startSwitch(type, item, opts) {
   const timer = setTimeout(finishSwitch, 2500);
   switching = { type, item, opts, timer };
   settling = true;
+  switchAbort = false;
   bridge().disconnect();
 }
 function finishSwitch() {
@@ -1202,6 +1204,16 @@ function finishSwitch() {
   /* 等手机那一层把上一条连接收拾完再连。 */
   setTimeout(() => {
     settling = false;
+    if (switchAbort) {
+      /* 半路上按了系统返回（evcTryBack）：已经断开了，不再连，留在扫描页。 */
+      switchAbort = false;
+      mod.value = "";
+      page.value = "scan";
+      note.value = "蓝牙已断开";
+      setProfile(TYPE_AC06);
+      startScan();
+      return;
+    }
     if (s.type === TYPE_M01) {
       openM01(s.item, s.opts);
       return;
@@ -1490,11 +1502,38 @@ function back() {
   else if (rootBack(page.value)) goTab(rootBack(page.value));
   else goTab(subpageBack(tab.value));
 }
-/* 手机侧滑和返回键。扫描页、立即充电页交给系统退出到桌面；预约、设置两个标签回到立即充电；
- * 其余页面与「返回」相同，回到上一级。 */
+/* 手机侧滑和返回键（Android 的 dispatchSystemBack、iOS 的左边缘右滑都调这里）。返回 false 只有
+ * 一种情况：停在扫描列表上、什么都没连，Android 这时退出应用，iOS 什么也不做。其余都返回 true：
+ *   立即充电页        和「断开蓝牙」一样 disconnect()，手机那一层报 page "scan" 后回到扫描列表
+ *   预约、设置两个标签 回立即充电（不断开），再按一次才断开
+ *   密码页            back() 断开回扫描列表
+ *   其余页面          与「返回」相同，回上一级
+ * 扫描页上其实还连着的几种（认类型、核对已保存的密码、换模块）也不退出应用：断开，留在扫描列表。 */
 window.evcTryBack = function () {
-  if (mod.value === "m01") return m01Ref.value ? m01Ref.value.tryBack() : false;
-  if (page.value === "scan" || page.value === "charge") return false;
+  /* 正在换模块：已经在断开了，不再发一次；记下来，收拾完不重连（见 finishSwitch）。 */
+  if (switching || settling) {
+    switchAbort = true;
+    return true;
+  }
+  /* M01 模块还没挂上（openM01 的 nextTick 之前）：不退出应用，这一下不管。 */
+  if (mod.value === "m01") return m01Ref.value ? m01Ref.value.tryBack() : true;
+  /* 认类型的那一次连接：不等了，断开。 */
+  if (probing) {
+    clearTimeout(probing.timer);
+    probing = null;
+    disconnect();
+    return true;
+  }
+  if (page.value === "scan") {
+    /* 用已保存的密码连接、核对时页面还停在扫描页，其实连着：断开，不退出应用。 */
+    if (!linkReady.value) return false;
+    disconnect();
+    return true;
+  }
+  if (page.value === "charge") {
+    disconnect();
+    return true;
+  }
   back();
   return true;
 };
@@ -4391,7 +4430,7 @@ button, input { font: inherit; color: inherit; }
 .pile span { flex: 1; min-width: 0; }
 .pile-mark { width: 48px; height: 64px; flex: none; color: #f2f2f2; }
 .device.pile em { flex: none; color: #9a9a9a; font-size: 13px; font-weight: 500; }
-/* 合并后：卡片上写是哪种桩（汽车充电桩 AC06 / 摩托车充电桩 M01 / 连接后识别）。 */
+/* 合并后：扫描列表卡片上写是哪种桩（汽车充电桩 / 摩托车充电桩 / 连接后识别），不带型号。 */
 .device.pile .kind { display: block; margin-top: 3px; color: #f5c400; font-size: 13px; font-weight: 650; }
 .device.pile.kind-unknown .kind { color: #9a9a9a; }
 .note.warn { color: #f0a020; opacity: 1; }

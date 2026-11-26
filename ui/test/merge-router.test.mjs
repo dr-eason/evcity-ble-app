@@ -98,8 +98,8 @@ test("扫描页：每张卡写是哪种桩；EVC_ 的老 M01 按记住的类型�
     { name: "EVC-XYZ", addr: "AA:00:00:00:00:04", kind: "ac06" },
   ], { store: { "dev-type:AA:00:00:00:00:03": "m01" } });
   const text = app.text();
-  assert.equal((text.match(/摩托车充电桩 M01/g) || []).length, 2, text);
-  assert.equal((text.match(/汽车充电桩 AC06/g) || []).length, 1, text);
+  assert.equal((text.match(/摩托车充电桩/g) || []).length, 2, text);
+  assert.equal((text.match(/汽车充电桩/g) || []).length, 1, text);
   assert.equal((text.match(/连接后识别/g) || []).length, 1, text);
   assert.equal(app.byClass("kind-m01").length, 2);
   assert.equal(app.byClass("kind-ac06").length, 1);
@@ -125,7 +125,7 @@ for (const m01Name of ["EVCM_A1B2C3", "EVCMA1B2C3"]) test("点 " + m01Name + " �
 test("EVC_ 的老 M01（没重刷）：先按 AC06 连，状态行是 ACK SYS，断开、换 M01 模块重连；下次扫描写 M01", async () => {
   const addr = "AA:00:00:00:00:21";
   const { app, piles } = await setup([{ name: "EVC_OLD021", addr, kind: "m01" }], { pins: { [addr]: "123456" } });
-  assert.ok(app.text().includes("汽车充电桩 AC06"));
+  assert.ok(app.text().includes("汽车充电桩"));
   app.click("EVC_OLD021");
   await run(10000);
   assert.deepEqual(profileCalls(app).slice(0, 5), [
@@ -136,10 +136,10 @@ test("EVC_ 的老 M01（没重刷）：先按 AC06 连，状态行是 ACK SYS，
   assert.ok(!text.includes("最大电流"), "没有留在 AC06 的页面上");
   assert.ok(piles[addr].log.filter((c) => c === "AUTH\t123456").length >= 1);
   assert.equal(app.store.get("dev-type:" + addr), "m01");
-  /* 断开回扫描页：这一台现在写摩托车充电桩 M01。 */
+  /* 断开回扫描页：这一台现在写摩托车充电桩。 */
   app.click("断开蓝牙");
   await run(500);
-  assert.ok(app.text().includes("摩托车充电桩 M01"), app.text().slice(0, 300));
+  assert.ok(app.text().includes("摩托车充电桩"), app.text().slice(0, 300));
   assert.ok(app.text().includes("扫描充电桩") || app.text().includes("停止扫描"));
   app.close();
 });

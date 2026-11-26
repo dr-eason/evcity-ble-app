@@ -7,9 +7,13 @@ export const MERGE_LANGS = ["en", "fr", "ja", "de", "es", "pt", "ru", "hi", "ar"
 
 /* 每一行：中文（键），后面依次是 MERGE_LANGS 里各语言的译文。 */
 export const MERGE_ROWS = [
-  ["汽车充电桩 AC06",
-    "EV charger AC06", "Borne voiture AC06", "自動車用充電器 AC06", "Auto-Ladegerät AC06", "Cargador de coche AC06", "Carregador de carro AC06",
-    "Автомобильная станция AC06", "कार चार्जर AC06", "شاحن سيارات AC06", "গাড়ির চার্জার AC06", "Pengisi daya mobil AC06", "کار چارجر AC06"],
+  ["汽车充电桩",
+    "EV charger", "Borne voiture", "自動車用充電器", "Auto-Ladegerät", "Cargador de coche", "Carregador de carro",
+    "Автомобильная станция", "कार चार्जर", "شاحن سيارات", "গাড়ির চার্জার", "Pengisi daya mobil", "کار چارجر"],
+  ["摩托车充电桩",
+    "Motorcycle charger", "Borne moto", "バイク用充電器", "Motorrad-Ladegerät", "Cargador de moto", "Carregador de moto",
+    "Станция для мотоциклов", "मोटरसाइकिल चार्जर", "شاحن دراجات نارية", "মোটরসাইকেল চার্জার", "Pengisi daya motor", "موٹر سائیکل چارجر"],
+  /* M01 模块自己的页面上（连接中、密码页、设置里的 App 版本）还带型号，扫描页的卡片不带。 */
   ["摩托车充电桩 M01",
     "Motorcycle charger M01", "Borne moto M01", "バイク用充電器 M01", "Motorrad-Ladegerät M01", "Cargador de moto M01", "Carregador de moto M01",
     "Станция для мотоциклов M01", "मोटरसाइकिल चार्जर M01", "شاحن دراجات نارية M01", "মোটরসাইকেল চার্জার M01", "Pengisi daya motor M01", "موٹر سائیکل چارجر M01"],

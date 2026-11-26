@@ -48,7 +48,7 @@ test("标签栏只在标签首页、连着、密码通过、没在打字时显�
   }
 });
 
-test("返回：预约、设置回立即充电；立即充电交给系统；二级页回进来时的标签", () => {
+test("返回：预约、设置回立即充电；立即充电没有上一个标签（系统返回键在那里断开回扫描列表）；二级页回进来时的标签", () => {
   assert.equal(rootBack("sched"), "charge");
   assert.equal(rootBack("menu"), "charge");
   assert.equal(rootBack("charge"), null);
@@ -132,8 +132,12 @@ test("标签栏：固定在底部、让出安全区、选中态明显，切标�
   assert.match(vue, /<button v-if="page === 'scan' \|\| isTabPage\(page\)" class="lang" @click="openLang">/);
   /* 断开后回到扫描页：原生层发 page=scan 那一段照旧。 */
   assert.match(script, /if \(page\.value === "scan"\) \{\n\s+stopTimeSync\(\);/);
-  /* 返回键：扫描页、立即充电交给系统，其余走 back()。 */
-  assert.match(script, /if \(page\.value === "scan" \|\| page\.value === "charge"\) return false;/);
+  /* 系统返回键：只有停在扫描列表上（没连着）返回 false；立即充电和「断开蓝牙」一样 disconnect()，
+   * 其余走 back()。跑起来的测试在 system-back.test.mjs。 */
+  const tryBack = script.slice(script.indexOf("window.evcTryBack = function"), script.indexOf("function submitGate"));
+  assert.equal((tryBack.match(/return false;/g) || []).length, 1);
+  assert.match(tryBack, /if \(page\.value === "scan"\) \{\n[^\n]*\n\s+if \(!linkReady\.value\) return false;/);
+  assert.match(tryBack, /if \(page\.value === "charge"\) \{\n\s+disconnect\(\);\n\s+return true;/);
   assert.match(script, /else if \(rootBack\(page\.value\)\) goTab\(rootBack\(page\.value\)\);/);
 });
 

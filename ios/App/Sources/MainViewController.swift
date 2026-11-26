@@ -237,8 +237,8 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
             return
         }
         backHandledAt = now
-        // 二级及更深的页面由页面自己回上一级。扫描页、充电页返回 false：Android 这时退出到桌面，
-        // iOS 的 App 不自己退出，所以什么也不做。
+        // 二级及更深的页面由页面自己回上一级；连着充电桩的首页（立即充电）由页面断开蓝牙、回扫描列表。
+        // 只有停在扫描列表上返回 false：Android 这时退出到桌面，iOS 的 App 不自己退出，所以什么也不做。
         web.evaluateJavaScript(
             "(function(){try{return !!(window.evcTryBack&&window.evcTryBack());}catch(e){return false;}})()",
             completionHandler: nil)

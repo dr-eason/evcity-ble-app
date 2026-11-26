@@ -21,8 +21,8 @@ export const TYPE_KEY_PREFIX = "dev-type:";
 
 /* 扫描页卡片上的标签（中文是翻译的键，packs-merge.js 里 13 种语言都有）。 */
 export const TYPE_LABELS = {
-  ac06: "汽车充电桩 AC06",
-  m01: "摩托车充电桩 M01",
+  ac06: "汽车充电桩",
+  m01: "摩托车充电桩",
   unknown: "连接后识别",
 };
 
