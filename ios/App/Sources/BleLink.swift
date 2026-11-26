@@ -359,7 +359,7 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         requestStatus()
     }
 
-    /// 没收到 STAT 就每 700 ms 再问一次，最多 5 次。
+    /// 没收到状态（AC06 的 STAT、M01 的 ACK SYS / ACK PORTS）就每 700 ms 再问一次，最多 5 次。
     private func requestStatus() {
         if statSeen || peripheral == nil || statusTries >= 5 {
             return
@@ -491,12 +491,23 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     private func deliver(_ lines: [String]) {
+        // 第一行状态认出了是哪种桩（AC06 的 STAT、M01 的 ACK SYS）：不再催 STATUS，告诉页面一次。
+        // 行首表在 parser 里已经换好了。
+        if let found = parser.takeKind() {
+            statSeen = true
+            emit(.kind(found.rawValue))
+        }
         for line in lines {
-            if line.hasPrefix("STAT ") {
+            if FrameParser.kindOfStatus(line) != nil {
                 statSeen = true
             }
             emit(.line(line))
         }
+    }
+
+    /// 合并后：连接前页面告诉这次连的是哪种桩（EVC.setProfile），选行首表。
+    func setProfile(_ which: ChargerKind) {
+        parser.profile = which
     }
 
     // MARK: 发事件

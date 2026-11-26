@@ -55,6 +55,8 @@ export const PROFILE_FORMAT = 2;
 export const PROFILE_MODEL = "AC06";
 /* 导出文件的标记。 */
 export const EXPORT_KIND = "evcity-ac06-oneclick";
+/* M01 摩托车充电桩的导出文件类型（m01/profile-file.js）。合并后同一个 App 里两种都有，认出来给一句明白的提示。 */
+export const M01_EXPORT_KIND = "evcity-m01-oneclick";
 /* 导入文件最大多大（字节）。一份配置不到 2 KB。 */
 export const IMPORT_MAX_BYTES = 1024 * 1024;
 
@@ -891,6 +893,7 @@ export function importText(text, existing, newId) {
   let items;
   if (Array.isArray(data)) items = data;
   else if (data && typeof data === "object" && Array.isArray(data.profiles)) {
+    if (data.kind === M01_EXPORT_KIND) return { error: "这是摩托车充电桩 M01 的一键配置，不能导入到汽车充电桩 AC06" };
     if (data.kind !== undefined && data.kind !== EXPORT_KIND) return { error: "这个文件不是一键配置文件" };
     const format = profileFormat(data);
     if (!format) return { error: "这个文件不是一键配置文件" };
@@ -910,6 +913,7 @@ export function importText(text, existing, newId) {
     const format = profileFormat(item);
     if (!format) return { error: "第 {n} 份配置不能用", vars: { n } };
     if (format > PROFILE_FORMAT) return { error: "这个文件是更新版本的 App 导出的，请先升级 App" };
+    if (item.model === "M01") return { error: "这是摩托车充电桩 M01 的一键配置，不能导入到汽车充电桩 AC06" };
     if (item.model !== PROFILE_MODEL) return { error: "第 {n} 份配置不是 AC06 充电桩的", vars: { n } };
     const name = cleanProfileName(item.name);
     if (!name || typeof item.name !== "string") return { error: "第 {n} 份配置的名称不能用", vars: { n } };

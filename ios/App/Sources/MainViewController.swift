@@ -212,6 +212,8 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
             pickFile()
         case .exportFile(let name, let text):
             exportFile(name: name, text: text)
+        case .setProfile(let which):
+            link?.setProfile(which)
         }
     }
 

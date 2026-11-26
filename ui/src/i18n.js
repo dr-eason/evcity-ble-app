@@ -10,6 +10,7 @@ import { scrThemePacks } from "./packs-scrtheme.js";
 import { layoutPacks } from "./packs-layout.js";
 import { phasePacks } from "./packs-phase.js";
 import { gbStopPacks } from "./packs-gbstop.js";
+import { mergePacks } from "./packs-merge.js";
 
 const en = {
   "返回": "Back",
@@ -850,6 +851,8 @@ Object.keys(layoutPacks).forEach((lang) => { if (packs[lang]) Object.assign(pack
 Object.keys(phasePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], phasePacks[lang]); });
 /* 新国标 6 秒停充（GBSTOPGET / GBSTOPSET、首页停止按钮的提示）：packs-gbstop.js。 */
 Object.keys(gbStopPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], gbStopPacks[lang]); });
+/* 合并 AC06 + M01：扫描页上的两种桩、认类型、换模块、固件和一键配置不能混用：packs-merge.js。 */
+Object.keys(mergePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], mergePacks[lang]); });
 
 export function translate(lang, text, vars) {
   const key = text == null ? "" : String(text);

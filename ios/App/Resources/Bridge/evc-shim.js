@@ -78,6 +78,8 @@
     mtu: function () { return mockLink ? mockLink.mtu() : mtu; },
     linkFast: function (on) { ble("linkFast", [!!on]); },
     heartbeatTime: function (on) { ble("heartbeatTime", [!!on]); },
+    /* 合并后（AC06 + M01）：这次连的是哪种桩，"ac06" / "m01"，原生按它选行首表。 */
+    setProfile: function (which) { ble("setProfile", [which === "m01" ? "m01" : "ac06"]); },
     /* 一键配置导出（2.8.0）：原生写临时文件，再打开「文件」App 的导出窗口；结果用 onBle({t:"export"}) 回来。
      * 不走 Mock：模拟器上也是真的存文件。 */
     exportFile: function (name, text) {

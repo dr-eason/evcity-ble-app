@@ -13,7 +13,7 @@ public struct BridgeDevice: Equatable {
     }
 }
 
-/// 原生发给页面的事件，页面里统一由 `onBle(obj)` 接。和 Android 的六种一样。
+/// 原生发给页面的事件，页面里统一由 `onBle(obj)` 接。和 Android 的七种一样（合并后多了 kind）。
 public enum BridgeEvent: Equatable {
     case note(String)
     case page(String)
@@ -22,6 +22,8 @@ public enum BridgeEvent: Equatable {
     case devs([BridgeDevice])
     /// 一键配置导出（2.8.0）的结果。reason：成功是 ""，用户取消是 "cancel"，其余 "fail"。
     case export(ok: Bool, reason: String)
+    /// 合并后（AC06 + M01）：连上后第一行状态认出来的类型，"ac06" 或 "m01"。
+    case kind(String)
 
     public var object: [String: Any] {
         switch self {
@@ -38,6 +40,8 @@ public enum BridgeEvent: Equatable {
             return ["t": "devs", "list": rows]
         case .export(let ok, let reason):
             return ["t": "export", "ok": ok, "s": reason]
+        case .kind(let which):
+            return ["t": "kind", "s": which]
         }
     }
 
@@ -81,6 +85,8 @@ public enum BridgeCall: Equatable {
     case pickFile
     /// 一键配置导出（2.8.0）：建议的文件名（已经过 ExportRules.fileName）和文件内容。
     case exportFile(name: String, text: String)
+    /// 合并后：这次连的是哪种桩（选行首表）。认不出的按 AC06。
+    case setProfile(ChargerKind)
 
     /// 一条命令能不能发：空的、带换行的不发。和 Java Bridge.send 一样。
     public static func sendable(_ text: String) -> Bool {
@@ -144,6 +150,8 @@ public enum BridgeCall: Equatable {
             return .restart
         case "pickFile":
             return .pickFile
+        case "setProfile":
+            return .setProfile(text(0) == "m01" ? .m01 : .ac06)
         case "exportFile":
             guard let content = text(1), !content.isEmpty, content.utf8.count <= ExportRules.maxBytes else {
                 return nil

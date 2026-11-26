@@ -1,5 +1,8 @@
 <template>
-  <main class="app" :class="{ 'privacy-page': page === 'privacy', 'scan-page': page === 'scan', tabbed: tabBarOn }">
+  <!-- 合并后（AC06 + M01）：扫描页、语言、隐私协议、按类型分模块都在这里。点了 M01 的桩就换成
+       m01/M01App.vue（按 AC06 的样子重做的 M01 页面）；其余页面还是 AC06 原来的。 -->
+  <M01App v-if="mod === 'm01'" ref="m01Ref" :lang="lang" @exit="onM01Exit" @set-lang="storeLang" />
+  <main v-else class="app" :class="{ 'privacy-page': page === 'privacy', 'scan-page': page === 'scan', tabbed: tabBarOn }">
     <header class="top">
       <div>
         <svg class="logo" viewBox="0 0 108 28" width="108" height="28" aria-label="EVCITY">
@@ -15,9 +18,20 @@
 
     <section v-if="page === 'scan'" class="body scan">
       <p class="note">{{ t(note) }}</p>
-      <div class="scan-list">
-        <button v-for="item in devices" :key="item.addr" class="card device pile" @click="connect(item)">
-          <svg class="pile-mark" viewBox="0 0 240 320" aria-hidden="true">
+      <p v-if="scanWarn" class="note warn">{{ t(scanWarn) }}</p>
+      <div class="scan-list" @pointerdown="scanHold('p')" @pointerup="scanRelease('p')" @pointercancel="scanRelease('p')" @pointerleave="scanRelease('p')"
+           @touchstart.passive="scanHold('t')" @touchend="scanRelease('t')" @touchcancel="scanRelease('t')">
+        <button v-for="item in scanRows" :key="item.addr" class="card device pile" :class="'kind-' + item.type" @click="connect(item)">
+          <svg v-if="item.type === 'm01'" class="pile-mark" viewBox="0 0 240 320" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="30" y="22" width="180" height="248" rx="28"/>
+              <rect x="97" y="46" width="46" height="14" rx="7" fill="#f5c400" stroke="none"/>
+              <circle v-for="n in 10" :key="n" :cx="((n - 1) % 2) ? 158 : 82" :cy="96 + Math.floor((n - 1) / 2) * 34" r="11"/>
+              <path d="M98 270 v34"/>
+              <path d="M142 270 v34"/>
+            </g>
+          </svg>
+          <svg v-else class="pile-mark" viewBox="0 0 240 320" aria-hidden="true">
             <g fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
               <rect x="54" y="22" width="132" height="248" rx="32"/>
               <rect x="97" y="48" width="46" height="14" rx="7" fill="#f5c400" stroke="none"/>
@@ -34,6 +48,7 @@
           </svg>
           <span>
             <strong>{{ item.name }}</strong>
+            <b class="kind">{{ t(TYPE_LABELS[item.type]) }}</b>
             <small>{{ item.addr }}</small>
           </span>
           <em>{{ item.rssi }}</em>
@@ -754,6 +769,10 @@ import {
   stopLive, stopState, stopTap, stopView,
 } from "./gbstop.js";
 import { appVersionFull, appVersionLabel, resolveAppVersion } from "./app-version.js";
+import M01App from "./m01/M01App.vue";
+import { TYPE_AC06, TYPE_LABELS, TYPE_M01, TYPE_UNKNOWN, deviceType, needsSwitch, profileFor, rememberType, typeFromStatus } from "./devtype.js";
+import { firmwareTypeError } from "./ota-guard.js";
+import { RELEASE_MS as SCAN_RELEASE_MS, createScanList } from "./scan-list.js";
 
 const langIds = languages.map((item) => item.id);
 function savedLang() {
@@ -804,11 +823,17 @@ function leaveLang() {
     goTab(target);
   }
 }
-function setLang(id) {
-  if (langIds.indexOf(id) < 0) return;
+/* 合并后两种桩共用一个语言设置，存在原来 AC06 的键 ac06-lang 里（老用户的选择不丢）；
+ * M01 模块在自己的语言页上选了，也走这里。 */
+function storeLang(id) {
+  if (langIds.indexOf(id) < 0) return false;
   lang.value = id;
   applyDocLang(id);
   try { localStorage.setItem("ac06-lang", id); } catch (e) {}
+  return true;
+}
+function setLang(id) {
+  if (!storeLang(id)) return;
   leaveLang();
 }
 function t(text, vars) {
@@ -1047,7 +1072,160 @@ onMounted(() => {
   applyDocLang(lang.value);
   if (page.value === "scan") startScan();
 });
+/* ---- 合并后：扫描页的卡片按类型（devtype.js）交给 AC06 或 M01 模块 ----
+ * mod：现在用哪个模块的页面，"" 是 AC06（就是这个文件里原来的页面），"m01" 是 m01/M01App.vue。
+ * 连上后手机那一层看第一行状态报 {t:"kind"}（这里也自己看一遍行），和点的时候猜的不一样就
+ * 记住、断开、交给对的模块重新连。 */
+const mod = ref("");
+const m01Ref = ref(null);
+const scanWarn = ref("");
+const typeTick = ref(0);
+/* 扫描列表的先后：见 scan-list.js。手指按在列表上（指针或触摸，滚动时指针会先被取消、触摸还在）
+ * 行不动；两样都松开后过一小会儿（点击已经处理完）再按回差重排一次。 */
+const scanList = createScanList();
+const scanHeld = { p: false, t: false };
+let scanReleaseTimer = null;
+function scanHold(kind) {
+  scanHeld[kind] = true;
+  if (scanReleaseTimer) { clearTimeout(scanReleaseTimer); scanReleaseTimer = null; }
+  scanList.hold(Date.now());
+}
+function scanRelease(kind) {
+  scanHeld[kind] = false;
+  if (scanHeld.p || scanHeld.t) return;
+  scanList.release(Date.now());
+  if (scanReleaseTimer) clearTimeout(scanReleaseTimer);
+  scanReleaseTimer = setTimeout(() => {
+    scanReleaseTimer = null;
+    devices.value = scanList.rows(Date.now());
+  }, SCAN_RELEASE_MS + 20);
+}
+const scanRows = computed(() => {
+  typeTick.value;
+  return devices.value.map((item) => Object.assign({}, item, { type: deviceType(item) }));
+});
+let linkItem = null;          /* 这次连的是哪一台（{ name, addr }） */
+let linkKind = "";            /* 这次连接认出来的类型，认出来之前是 "" */
+let probing = null;           /* 认不出名字的桩：先连上看状态行，{ item, timer } */
+let switching = null;         /* 正在换模块：{ type, item, opts, timer } */
+let settling = false;         /* 断开以后、重新连之前，手机那一层还会报几条，不交给页面 */
+let noteAfterDrop = "";       /* 下一条“蓝牙已断开”换成这一句 */
+const PROBE_MS = 10000;
+function setProfile(type) {
+  const api = bridge();
+  if (api && typeof api.setProfile === "function") {
+    try { api.setProfile(profileFor(type)); } catch (e) {}
+  }
+}
 function connect(item) {
+  scanWarn.value = "";
+  linkItem = { name: item.name || "", addr: item.addr || "" };
+  linkKind = "";
+  const type = deviceType(item);
+  if (type === TYPE_M01) {
+    openM01(linkItem, null);
+    return;
+  }
+  if (type === TYPE_UNKNOWN) {
+    probe(linkItem);
+    return;
+  }
+  setProfile(TYPE_AC06);
+  connectAc06(item);
+}
+async function openM01(item, opts) {
+  scanning.value = false;
+  linkItem = item;
+  linkKind = "";
+  setProfile(TYPE_M01);
+  mod.value = "m01";
+  await nextTick();
+  if (m01Ref.value) m01Ref.value.connect(item, opts);
+}
+/* M01 模块断开了：回扫描页。并充切换后桩在重启，模块留的那一行提示照旧显示。 */
+function onM01Exit(info) {
+  mod.value = "";
+  page.value = "scan";
+  note.value = (info && info.note) || "蓝牙已断开";
+  scanWarn.value = (info && info.warn) || "";
+  setProfile(TYPE_AC06);
+  startScan();
+}
+function probe(item) {
+  scanning.value = false;
+  setProfile(TYPE_AC06);
+  page.value = "scan";
+  note.value = "正在连接，识别充电桩类型";
+  const timer = setTimeout(() => {
+    if (!probing || probing.timer !== timer) return;
+    probing = null;
+    noteAfterDrop = "没有识别出充电桩类型，请重试";
+    bridge().disconnect();
+  }, PROBE_MS);
+  probing = { item, timer };
+  bridge().connect(item.addr);
+}
+/* 认出类型（手机那一层的 {t:"kind"}，或者这里自己看到的第一行状态）。 */
+function onKind(type) {
+  if (type !== TYPE_AC06 && type !== TYPE_M01) return;
+  if (linkKind || !linkItem) return;
+  linkKind = type;
+  if (rememberType(linkItem.addr, type)) typeTick.value++;
+  if (probing) {
+    clearTimeout(probing.timer);
+    const item = probing.item;
+    probing = null;
+    startSwitch(type, item, null);
+    return;
+  }
+  const routed = mod.value === "m01" ? TYPE_M01 : TYPE_AC06;
+  if (!needsSwitch(routed, type)) return;
+  /* AC06 的密码页上输过的密码带过去（M01 也是 6 位数字）。 */
+  const opts = routed === TYPE_AC06 && /^\d{6}$/.test(gatePass.value) ? { pin: gatePass.value, save: gateSave.value } : null;
+  startSwitch(type, linkItem, opts);
+}
+function startSwitch(type, item, opts) {
+  if (mod.value !== "m01") quietAc06();
+  page.value = "scan";
+  note.value = type === TYPE_M01 ? "这是摩托车充电桩 M01，正在切换" : "这是汽车充电桩 AC06，正在切换";
+  const timer = setTimeout(finishSwitch, 2500);
+  switching = { type, item, opts, timer };
+  settling = true;
+  bridge().disconnect();
+}
+function finishSwitch() {
+  const s = switching;
+  if (!s) return;
+  switching = null;
+  clearTimeout(s.timer);
+  if (mod.value === "m01" && s.type !== TYPE_M01) mod.value = "";
+  /* 等手机那一层把上一条连接收拾完再连。 */
+  setTimeout(() => {
+    settling = false;
+    if (s.type === TYPE_M01) {
+      openM01(s.item, s.opts);
+      return;
+    }
+    linkKind = "";
+    linkItem = s.item;
+    setProfile(TYPE_AC06);
+    connectAc06(s.item, s.opts);
+  }, 500);
+}
+/* 不断开蓝牙、不扫描，只把 AC06 这一边的连接状态清掉（换到 M01 模块之前）。 */
+function quietAc06() {
+  stopTimeSync();
+  wifiJoinWanted = "";
+  stopWifiJoin("");
+  linkReady.value = false;
+  fw.value = "—";
+  resetGateSession();
+  stopGateLock();
+  gateState.value = "unknown";
+  gateEnter.value = false;
+  gateAuto.value = false;
+}
+function connectAc06(item, opts) {
   scanning.value = false;
   linkAddr.value = item.addr || "";
   resetGateSession();
@@ -1058,6 +1236,15 @@ function connect(item) {
   gateInput.value = "";
   gateSave.value = true;
   resetCharge();
+  if (opts && /^\d{6}$/.test(opts.pin || "")) {
+    gateAuto.value = false;
+    gatePass.value = String(opts.pin);
+    gateSave.value = opts.save !== false;
+    gateNote.value = "正在连接并核对";
+    page.value = "gate";
+    bridge().connect(item.addr);
+    return;
+  }
   const saved = savedGate();
   if (/^\d{6}$/.test(saved)) {
     gateAuto.value = true;
@@ -1306,6 +1493,7 @@ function back() {
 /* 手机侧滑和返回键。扫描页、立即充电页交给系统退出到桌面；预约、设置两个标签回到立即充电；
  * 其余页面与「返回」相同，回到上一级。 */
 window.evcTryBack = function () {
+  if (mod.value === "m01") return m01Ref.value ? m01Ref.value.tryBack() : false;
   if (page.value === "scan" || page.value === "charge") return false;
   back();
   return true;
@@ -3598,6 +3786,20 @@ function onFirmwareFile(event) {
     const image = new Uint8Array(size);
     image.set(raw);
     for (let i = raw.length; i < size; i++) image[i] = 0xFF;
+    /* 合并后：只收 AC06 的固件（文件里有 AC06VER=），M01 的拦在这里，不发 OTAPREP（ota-guard.js）。 */
+    const typeError = firmwareTypeError("ac06", image);
+    if (typeError) {
+      otaImage = null;
+      otaName.value = file.name;
+      otaSize.value = raw.length;
+      otaCrc.value = "";
+      otaFileVer.value = "";
+      otaPhase.value = "";
+      otaFileLayout.value = 0;
+      otaNoteVars.value = null;
+      otaNote.value = typeError;
+      return;
+    }
     const layout = firmwareLayout(image);
     if (!layout) {
       otaImage = null;
@@ -3640,7 +3842,7 @@ function cancelDowngrade() {
   otaNote.value = "发送过程中充电桩亮白灯快闪";
 }
 async function beginUpgrade() {
-  if (!otaImage) return;
+  if (!otaImage || firmwareTypeError("ac06", otaImage)) return;
   if (!downgradeAccepted && isDowngrade(otaFileVer.value, fw.value)) {
     otaNoteVars.value = { from: verLabel(fw.value), to: verLabel(otaFileVer.value) };
     otaNote.value = "版本从 {from} 降低到 {to}，是否确认降级升级？";
@@ -4066,10 +4268,46 @@ function applyLine(line) {
 function handle(msg) {
   if (!msg || !msg.t) return;
   if (msg.t === "devs") {
-    devices.value = (msg.list || []).slice().sort((a, b) => b.rssi - a.rssi);
+    /* 先后由 scan-list.js 定（平滑 + 回差 + 按住不动），不再每次按最新 rssi 直接排。 */
+    devices.value = scanList.update(msg.list || [], Date.now());
+    return;
+  }
+  if (msg.t === "kind") {
+    onKind(msg.s);
+    return;
+  }
+  /* 换模块：断开以后手机那一层报的 page "scan"、“蓝牙已断开”不交给页面。 */
+  if (switching || settling) {
+    if (switching && msg.t === "page" && msg.s === "scan") finishSwitch();
+    if (msg.t === "scan") scanning.value = !!msg.on;
+    return;
+  }
+  /* 手机那一层没有 {t:"kind"} 的话（老的 iOS 外壳），自己看第一行状态。 */
+  if (msg.t === "line" && !linkKind && typeFromStatus(msg.s)) onKind(typeFromStatus(msg.s));
+  if (switching || settling) return;
+  if (probing) {
+    /* 认类型的那一次连接：连上了先不走 AC06 的密码流程，等状态行。 */
+    if (msg.t === "page" && msg.s === "charge") return;
+    if (msg.t === "line") return;
+    if (msg.t === "page" && msg.s === "scan") {
+      clearTimeout(probing.timer);
+      probing = null;
+    }
+  }
+  if (mod.value === "m01") {
+    if (msg.t === "scan") {
+      scanning.value = !!msg.on;
+      return;
+    }
+    if (m01Ref.value) m01Ref.value.handle(msg);
     return;
   }
   if (msg.t === "note") {
+    if (noteAfterDrop && msg.s === "蓝牙已断开") {
+      note.value = noteAfterDrop;
+      noteAfterDrop = "";
+      return;
+    }
     note.value = msg.s || "";
     return;
   }
@@ -4153,6 +4391,10 @@ button, input { font: inherit; color: inherit; }
 .pile span { flex: 1; min-width: 0; }
 .pile-mark { width: 48px; height: 64px; flex: none; color: #f2f2f2; }
 .device.pile em { flex: none; color: #9a9a9a; font-size: 13px; font-weight: 500; }
+/* 合并后：卡片上写是哪种桩（汽车充电桩 AC06 / 摩托车充电桩 M01 / 连接后识别）。 */
+.device.pile .kind { display: block; margin-top: 3px; color: #f5c400; font-size: 13px; font-weight: 650; }
+.device.pile.kind-unknown .kind { color: #9a9a9a; }
+.note.warn { color: #f0a020; opacity: 1; }
 .lang { background: none; border: 1px solid #f5c400; color: #f5c400; border-radius: 999px; padding: 6px 12px; }
 .wait { display: flex; align-items: center; gap: 12px; }
 .wait p { margin: 0; }

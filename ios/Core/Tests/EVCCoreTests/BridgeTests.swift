@@ -127,6 +127,14 @@ final class BridgeCallTests: XCTestCase {
         XCTAssertNil(call("exportFile", ["a.json", String(repeating: "x", count: ExportRules.maxBytes + 1)]))
     }
 
+    func testSetProfileAndKind() {
+        XCTAssertEqual(call("setProfile", ["m01"]), .setProfile(.m01))
+        XCTAssertEqual(call("setProfile", ["ac06"]), .setProfile(.ac06))
+        XCTAssertEqual(call("setProfile", ["x"]), .setProfile(.ac06))
+        XCTAssertEqual(decode(BridgeEvent.kind("m01").json)["t"] as? String, "kind")
+        XCTAssertEqual(decode(BridgeEvent.kind("m01").json)["s"] as? String, "m01")
+    }
+
     func testExportFileName() {
         XCTAssertEqual(ExportRules.fileName("a:b*c?.txt"), "abc.txt.json")
         XCTAssertEqual(ExportRules.fileName(".hidden"), ExportRules.defaultName)
@@ -227,10 +235,10 @@ final class BridgeEventTests: XCTestCase {
 
     func testShimInitAppVersion() {
         let script = ShimInit(locale: "en", gate: [:], mock: false, nativeFilePicker: false,
-                              appVersion: "3.0.1", appBuild: "3001").script
+                              appVersion: "3.0.2", appBuild: "3002").script
         let body = String(script.dropFirst("window.__evcInit = ".count).dropLast(2))
         let object = decode(body)
-        XCTAssertEqual(object["appVersion"] as? String, "3.0.1")
-        XCTAssertEqual(object["appBuild"] as? String, "3001")
+        XCTAssertEqual(object["appVersion"] as? String, "3.0.2")
+        XCTAssertEqual(object["appBuild"] as? String, "3002")
     }
 }

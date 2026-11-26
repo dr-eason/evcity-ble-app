@@ -134,4 +134,47 @@ final class FrameParserTests: XCTestCase {
             XCTAssertFalse(FrameParser.knownLine(line), line)
         }
     }
+
+    // MARK: 合并后（AC06 + M01）
+
+    func testKindFromFirstStatusLine() {
+        var ac06 = FrameParser()
+        XCTAssertEqual(ac06.append(bytes("STAT A 0 0\n")), ["STAT A 0 0"])
+        XCTAssertEqual(ac06.takeKind(), .ac06)
+        XCTAssertNil(ac06.takeKind())
+
+        var m01 = FrameParser()
+        m01.profile = .m01
+        XCTAssertEqual(m01.append(bytes("ACK SYS\t1.3.6\t230.0\n")), ["ACK SYS\t1.3.6\t230.0"])
+        XCTAssertEqual(m01.takeKind(), .m01)
+        m01.reset()
+        XCTAssertNil(m01.kind)
+        XCTAssertEqual(m01.profile, .m01)
+    }
+
+    func testWrongProfileSwitchesOnStatus() {
+        // 按 M01 连上，来的却是 AC06 的 STAT：认出来、换成 AC06 的表，STAT 行也放给页面。
+        var parser = FrameParser()
+        parser.profile = .m01
+        XCTAssertEqual(parser.append(bytes("STAT A 0 0\n")), ["STAT A 0 0"])
+        XCTAssertEqual(parser.takeKind(), .ac06)
+        XCTAssertEqual(parser.profile, .ac06)
+    }
+
+    func testM01TableDoesNotSplitAtAc06Heads() {
+        // M01 的订单行里有 "ORD "、"PLUG " 这样的字样，用 M01 的表不能从中间切开。
+        var parser = FrameParser()
+        parser.profile = .m01
+        XCTAssertEqual(parser.append(bytes("ACK ORD\t3\tSTAT ORD PLUG x\n")), ["ACK ORD\t3\tSTAT ORD PLUG x"])
+        XCTAssertFalse(FrameParser.frameHeadsM01.contains(Array("ORD ".utf8)))
+        XCTAssertFalse(FrameParser.frameHeadsM01.contains(Array("STAT ".utf8)))
+        XCTAssertFalse(FrameParser.knownLine("STAT x", profile: .m01))
+        XCTAssertTrue(FrameParser.knownLine("STAT x", profile: .ac06))
+    }
+
+    func testNulRestoredToComma() {
+        var parser = FrameParser()
+        parser.profile = .m01
+        XCTAssertEqual(parser.append([UInt8]("ACK PLIM\t1".utf8) + [0] + [UInt8]("2\n".utf8)), ["ACK PLIM\t1,2"])
+    }
 }
