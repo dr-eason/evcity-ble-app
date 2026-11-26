@@ -89,6 +89,11 @@ final class BridgeCallTests: XCTestCase {
         return BridgeCall.parse(["m": name, "a": args] as [String: Any])
     }
 
+    private func decode(_ json: String) -> [String: Any] {
+        let data = json.data(using: .utf8)!
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
     func testPlainCalls() {
         XCTAssertEqual(call("scan"), .scan)
         XCTAssertEqual(call("stopScan"), .stopScan)
