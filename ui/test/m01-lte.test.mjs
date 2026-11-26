@@ -555,7 +555,10 @@ test("App.vue：4G 入口在 WiFi 配网下面；4G 页、互斥提示、首页�
   assert.ok(!/固件不支持|2\.6\.16/.test(vue), "还有旧固件的提示");
   assert.match(ltePage[0], /<select v-model="lteApn\.proto"/);
   /* 还没读到开关、正在保存时：开关、下拉、三个输入框、保存都不可用。 */
-  assert.equal((ltePage[0].match(/:disabled="!lteReady \|\| lteBusy"/g) || []).length, 6);
+  assert.equal((ltePage[0].match(/:disabled="!lteReady \|\| lteBusy(?: \|\| saveOff\('apn'\))?"/g) || []).length, 6);
+  /* APN 的保存结果写在保存按钮上，不再有单独的提示行。 */
+  assert.match(ltePage[0], /:disabled="!lteReady \|\| lteBusy \|\| saveOff\('apn'\)" @click="saveApn">\{\{ saveLbl\('apn'\) \}\}/);
+  assert.ok(!/lteApnNote/.test(vue), "lteApnNote 还在");
   /* 密码默认不显示，勾上“显示密码”才显示。 */
   assert.match(ltePage[0], /v-model="lteApn\.pass" class="field" :type="ltePassShow \? 'text' : 'password'"/);
   assert.match(ltePage[0], /v-model="ltePassShow" type="checkbox"/);
@@ -564,12 +567,19 @@ test("App.vue：4G 入口在 WiFi 配网下面；4G 页、互斥提示、首页�
     for (const m of block.matchAll(/t\('([^']+)'\)/g)) used.add(m[1]);
   }
   const script = vue.slice(vue.indexOf("<script"));
-  for (const name of ["lteNote", "lteApnNote"]) {
+  for (const name of ["lteNote"]) {
     for (const m of script.matchAll(new RegExp(name + "\\.value = (?:[^;]*?\\? )?\"([^\"]+)\"(?:\\s*:\\s*\"([^\"]+)\")?", "g"))) {
       used.add(m[1]);
       if (m[2]) used.add(m[2]);
     }
   }
+  /* 保存的结果写在按钮上（save-btn.js）：按钮上的短原因和按钮下面那一行说明也要有译文。 */
+  for (const id of ["apn"]) {
+    for (const m of script.matchAll(new RegExp("saveBtns\\.(?:ok|restart|fail|silent)\\(\"" + id + "\"((?:, \"[^\"]*\")*)\\)", "g"))) {
+      for (const one of m[1].matchAll(/"([^"]+)"/g)) used.add(one[1]);
+    }
+  }
+  ["保存中…", "保存成功", "保存失败", "保存失败：{why}", "充电桩没有应答"].forEach((key) => used.add(key));
   for (const m of script.matchAll(/key: "([^"]+)", value:/g)) used.add(m[1]);
   ["4G 设置", "移动网络和 APN", "WiFi 已打开，4G 已关闭。断电后仍然有效",
     "遥测已打开，4G 已关闭。遥测串口每秒发送状态，断电后仍然有效"].forEach((key) => used.add(key));

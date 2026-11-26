@@ -264,12 +264,19 @@ test("App.vue：时区页用到的字符串都在表里；预约页不再有时�
   }
   /* 脚本里时区页、预约页写进提示的句子。 */
   const script = vue.slice(vue.indexOf("<script"));
-  for (const name of ["tzNote", "schedNote"]) {
+  for (const name of ["schedNote"]) {
     for (const m of script.matchAll(new RegExp(name + "\\.value = (?:[^;]*?\\? )?\"([^\"]+)\"(?:\\s*:\\s*\"([^\"]+)\")?", "g"))) {
       used.add(m[1]);
       if (m[2]) used.add(m[2]);
     }
   }
+  /* 保存的结果写在按钮上（save-btn.js）：按钮上的短原因和按钮下面那一行说明也要有译文。 */
+  for (const id of ["tz", "sched"]) {
+    for (const m of script.matchAll(new RegExp("saveBtns\\.(?:ok|restart|fail|silent)\\(\"" + id + "\"((?:, \"[^\"]*\")*)\\)", "g"))) {
+      for (const one of m[1].matchAll(/"([^"]+)"/g)) used.add(one[1]);
+    }
+  }
+  ["保存中…", "保存成功", "保存失败", "保存失败：{why}", "充电桩没有应答"].forEach((key) => used.add(key));
   used.add("时区设置");
   used.add("屏幕、充电记录和预约的钟点按这个时区");
   used.add("按充电桩时区的钟点启动");

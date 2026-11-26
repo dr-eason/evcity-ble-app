@@ -488,22 +488,22 @@ test("编好的界面里有新文案（assets/index.html 是用这份源码编�
   assert.ok(html.includes("ACK\\\\s+AUTH\\\\s+LOCKED") || html.includes("AUTH\\s+LOCKED"));
 });
 
-test("版本号 3.0.3 / 3003：安卓", () => {
+test("版本号 3.0.4 / 3004：安卓", () => {
   const manifest = read("AC06/tools/ble-finder/AndroidManifest.xml");
-  assert.match(manifest, /android:versionCode="3003"/);
-  assert.match(manifest, /android:versionName="3\.0\.3"/);
+  assert.match(manifest, /android:versionCode="3004"/);
+  assert.match(manifest, /android:versionName="3\.0\.4"/);
 });
 
 /* iOS 的 Config/Base.xcconfig 和固件的 app_config.h 不归 App 这边改（2.8.0 的 App 改动只动
  * ble-finder；3.0.0 起三处一起升）。两边还没跟上时这两条记为 todo，不让整套测试失败；跟上以后就是普通的断言。 */
 const iosConf = (() => { try { return read("AC06/tools/ble-ios/Config/Base.xcconfig"); } catch (e) { return ""; } })();
-const iosSynced = /^EVC_VERSION = 3\.0\.3$/m.test(iosConf) && /^EVC_BUILD = 3003$/m.test(iosConf);
-test("版本号 3.0.3 / 3003：iOS 和安卓一致", { todo: iosSynced ? false : "ble-ios/Config/Base.xcconfig 还没升到 3.0.3 / 3003" }, () => {
-  assert.match(iosConf, /^EVC_VERSION = 3\.0\.3$/m);
-  assert.match(iosConf, /^EVC_BUILD = 3003$/m);
+const iosSynced = /^EVC_VERSION = 3\.0\.4$/m.test(iosConf) && /^EVC_BUILD = 3004$/m.test(iosConf);
+test("版本号 3.0.4 / 3004：iOS 和安卓一致", { todo: iosSynced ? false : "ble-ios/Config/Base.xcconfig 还没升到 3.0.4 / 3004" }, () => {
+  assert.match(iosConf, /^EVC_VERSION = 3\.0\.4$/m);
+  assert.match(iosConf, /^EVC_BUILD = 3004$/m);
 });
 const fwConf = (() => { try { return read("AC06/user/inc/app_config.h"); } catch (e) { return ""; } })();
-const fwSynced = /#define AC06_FW_VERSION\s+"3\.0\.3"/.test(fwConf);
-test("版本号 3.0.3：固件和 App 一致", { todo: fwSynced ? false : "固件 AC06_FW_VERSION 还没升到 3.0.3" }, () => {
-  assert.match(fwConf, /#define AC06_FW_VERSION\s+"3\.0\.3"/);
+const fwSynced = /#define AC06_FW_VERSION\s+"3\.0\.4"/.test(fwConf);
+test("版本号 3.0.4：固件和 App 一致", { todo: fwSynced ? false : "固件 AC06_FW_VERSION 还没升到 3.0.4" }, () => {
+  assert.match(fwConf, /#define AC06_FW_VERSION\s+"3\.0\.4"/);
 });

@@ -124,7 +124,8 @@
       <input v-model="plimOne" class="field" inputmode="numeric" maxlength="5" :disabled="plimBusy" @input="plimOneDirty = true">
       <p class="note">{{ t('超过上限持续 3 秒就停这一路。允许 {min} 到 {max} W。充电中修改立即生效，断电后仍然有效。', { min: plimMin, max: plimMax }) }}</p>
       <p v-if="plimNote" class="note">{{ t(plimNote, plimNoteVars) }}</p>
-      <button class="go" :disabled="plimBusy" @click="savePlimOne">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('plimOne')" :disabled="plimBusy || saveOff('plimOne')" @click="savePlimOne">{{ saveLbl('plimOne') }}</button>
+      <p v-if="saveWhy('plimOne')" class="save-why" :class="saveTone('plimOne')">{{ saveWhy('plimOne') }}</p>
     </section>
 
     <section v-else-if="page === 'orders'" class="body">
@@ -254,10 +255,12 @@
         </label>
       </div>
       <p v-if="plimNote" class="note">{{ t(plimNote, plimNoteVars) }}</p>
-      <button class="go" :disabled="plimBusy || !plimKnown" @click="savePlimList">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('plimList')" :disabled="plimBusy || !plimKnown || saveOff('plimList')" @click="savePlimList">{{ saveLbl('plimList') }}</button>
+      <p v-if="saveWhy('plimList')" class="save-why" :class="saveTone('plimList')">{{ saveWhy('plimList') }}</p>
       <p class="label">{{ t('全部设为同一个值 (W)') }}</p>
       <input v-model="plimAll" class="field" inputmode="numeric" maxlength="5" :disabled="plimBusy || !plimKnown">
-      <button class="ghost" :disabled="plimBusy || !plimKnown" @click="savePlimAll">{{ t('应用到全部端口') }}</button>
+      <button class="ghost save" :class="saveCls('plimAll')" :disabled="plimBusy || !plimKnown || saveOff('plimAll')" @click="savePlimAll">{{ saveLbl('plimAll', t('应用到全部端口')) }}</button>
+      <p v-if="saveWhy('plimAll')" class="save-why" :class="saveTone('plimAll')">{{ saveWhy('plimAll') }}</p>
     </section>
 
     <section v-else-if="page === 'pay'" class="body">
@@ -284,7 +287,8 @@
       <p v-if="payHoldLack" class="note warn">{{ t(payHoldLack) }}</p>
       <p v-else class="note">{{ t('功率连续低于阈值这么久就停这一路。默认 300 秒。允许 {min} 到 {max} 秒。', { min: pay.holdMin, max: pay.holdMax }) }}</p>
       <p v-if="payNote" class="note">{{ t(payNote) }}</p>
-      <button class="go" :disabled="payBusy || !payKnown" @click="savePay">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('pay')" :disabled="payBusy || !payKnown || saveOff('pay')" @click="savePay">{{ saveLbl('pay') }}</button>
+      <p v-if="saveWhy('pay')" class="save-why" :class="saveTone('pay')">{{ saveWhy('pay') }}</p>
     </section>
 
     <section v-else-if="page === 'par'" class="body">
@@ -298,7 +302,8 @@
         <button class="go" @click="confirmPar">{{ t('停止全部充电并切换') }}</button>
         <button @click="cancelPar">{{ t('取消') }}</button>
       </div>
-      <button v-else class="go" :disabled="parBusy || !parKnown || parPick === par.saved" @click="savePar">{{ t('保存') }}</button>
+      <button v-else class="go save" :class="saveCls('par')" :disabled="parBusy || !parKnown || parPick === par.saved || saveOff('par')" @click="savePar">{{ saveLbl('par') }}</button>
+      <p v-if="saveWhy('par')" class="save-why" :class="saveTone('par')">{{ saveWhy('par') }}</p>
     </section>
 
     <section v-else-if="page === 'gate'" class="body">
@@ -401,7 +406,8 @@
       <input v-model="netStopSec" class="field" inputmode="numeric" maxlength="3">
       <p class="note">{{ t('允许 10 到 600 秒，默认 60') }}</p>
       <p class="note">{{ t(netStopNote) }}</p>
-      <button class="go" @click="saveNetStop">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('netstop')" :disabled="saveOff('netstop')" @click="saveNetStop">{{ saveLbl('netstop') }}</button>
+      <p v-if="saveWhy('netstop')" class="save-why" :class="saveTone('netstop')">{{ saveWhy('netstop') }}</p>
     </section>
 
     <section v-else-if="page === 'reboot'" class="body">
@@ -443,7 +449,8 @@
       </div>
       <input v-model="password" class="field" type="password" :placeholder="t('密码')" maxlength="32" :disabled="wifiJoining">
       <p v-if="!wifiJoining" class="note">{{ t(wifiNote) }}</p>
-      <button class="go" :disabled="wifiJoining" @click="joinWifi">{{ t('连接并保存') }}</button>
+      <button class="go save" :class="saveCls('wifi')" :disabled="wifiJoining || saveOff('wifi')" @click="joinWifi">{{ saveLbl('wifi', t('连接并保存')) }}</button>
+      <p v-if="saveWhy('wifi')" class="save-why" :class="saveTone('wifi')">{{ saveWhy('wifi') }}</p>
     </section>
 
     <section v-else-if="page === 'ocpp'" class="body">
@@ -457,7 +464,8 @@
       <p class="label">{{ t('OCPP 地址') }}</p>
       <input v-model="ocppUrl" class="field" :placeholder="t('ws(s)://主机/路径')">
       <p class="note">{{ t(ocppNote) }}</p>
-      <button class="go" @click="saveOcpp">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('ocpp')" :disabled="saveOff('ocpp')" @click="saveOcpp">{{ saveLbl('ocpp') }}</button>
+      <p v-if="saveWhy('ocpp')" class="save-why" :class="saveTone('ocpp')">{{ saveWhy('ocpp') }}</p>
     </section>
 
     <section v-else-if="page === 'cfg'" class="body">
@@ -477,7 +485,8 @@
       <label class="label">{{ t('欠压停止 (V)') }}</label>
       <input v-model="cfg.under" class="field" inputmode="decimal">
       <p class="note">{{ t('母线电压高于过压值或低于欠压值时，10 路全部停止，电压恢复后自动解除。默认 253 和 207。欠压不低于 100，过压不超过 320，过压至少比欠压高 10。') }}</p>
-      <button class="go" @click="saveCfg">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('cfg')" :disabled="saveOff('cfg')" @click="saveCfg">{{ saveLbl('cfg') }}</button>
+      <p v-if="saveWhy('cfg')" class="save-why" :class="saveTone('cfg')">{{ saveWhy('cfg') }}</p>
     </section>
 
     <section v-else-if="page === 'ocfw'" class="body">
@@ -492,7 +501,8 @@
       <p class="label">{{ t('OCPP固件版本显示号') }}</p>
       <input v-model="ocfwText" class="field" maxlength="20" :placeholder="t('例如 1.0.0')">
       <p class="note">{{ t(ocfwNote) }}</p>
-      <button class="go" @click="saveOcfw">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('ocfw')" :disabled="saveOff('ocfw')" @click="saveOcfw">{{ saveLbl('ocfw') }}</button>
+      <p v-if="saveWhy('ocfw')" class="save-why" :class="saveTone('ocfw')">{{ saveWhy('ocfw') }}</p>
     </section>
 
     <section v-else-if="page === 'tz'" class="body">
@@ -506,11 +516,11 @@
         <strong class="verval">{{ tzBrief }}</strong>
         <small v-if="tzKnown && !tzListed" class="verkey">{{ t('当前时区不在列表里') }}</small>
       </div>
-      <p v-if="tzNote" class="note">{{ t(tzNote) }}</p>
+      <p v-if="saveWhy('tz')" class="save-why" :class="saveTone('tz')">{{ saveWhy('tz') }}</p>
       <div class="zones">
-        <button v-for="zone in TZ_ZONES" :key="zone" class="zone"
-                :class="{ on: tzKnown && zone === tzMin, busy: tzSaving && zone === tzPick }"
-                :disabled="tzSaving" @click="pickZone(zone)">{{ tzLabel(zone) }}</button>
+        <button v-for="zone in TZ_ZONES" :key="zone" class="zone save"
+                :class="[{ on: tzKnown && zone === tzMin, busy: tzSaving && zone === tzPick }, zone === tzPick ? saveCls('tz') : '']"
+                :disabled="tzSaving || saveOff('tz')" @click="pickZone(zone)">{{ zone === tzPick ? saveLbl('tz', tzLabel(zone), true) : tzLabel(zone) }}</button>
       </div>
       <p v-if="tzFollowsPhone" class="note">{{ t('WiFi、OCPP 和 4G 都关闭时，手机连着期间充电桩的时区会跟随手机的时区，这里选的会被改回去。') }}</p>
     </section>
@@ -540,8 +550,8 @@
         <input v-model="lteApn.pass" class="field" :type="ltePassShow ? 'text' : 'password'" maxlength="32" autocapitalize="off" autocomplete="off" spellcheck="false" :disabled="!lteReady || lteBusy" @input="lteApnDirty = true">
         <label class="lte-show"><input v-model="ltePassShow" type="checkbox"><span>{{ t('显示密码') }}</span></label>
       </div>
-      <p v-if="lteApnNote" class="note">{{ t(lteApnNote) }}</p>
-      <button class="go" :disabled="!lteReady || lteBusy" @click="saveApn">{{ t('保存') }}</button>
+      <button class="go save" :class="saveCls('apn')" :disabled="!lteReady || lteBusy || saveOff('apn')" @click="saveApn">{{ saveLbl('apn') }}</button>
+      <p v-if="saveWhy('apn')" class="save-why" :class="saveTone('apn')">{{ saveWhy('apn') }}</p>
       <template v-if="lteReady">
         <p class="label">{{ t('状态信息') }}</p>
         <div class="card lte-stat">
@@ -627,6 +637,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { SAVE_IDLE, SAVE_SILENT, SAVE_TEXT, createSaveBtns, saveClass, saveLabel, saveLocked } from "./save-btn.js";
 import PrivacyPolicy from "../PrivacyPolicy.vue";
 import { languages } from "../i18n.js";
 import { firmwareTypeError } from "../ota-guard.js";
@@ -1272,6 +1283,43 @@ const tab = ref("charge");
 watch(page, (now) => {
   if (isTabPage(now)) tab.value = now;
 });
+/* ---- 设置页的「保存」按钮（状态机见 save-btn.js，和 AC06 的 App.vue 同一种做法） ----
+ * 保存的结果只写在按钮上：保存中… → 保存成功 / 保存成功，重启生效 / 保存失败：原因，2.5 秒后
+ * 变回「保存」；这期间按钮不可点。长的原因写在按钮下面紧挨着的一行小字里（saveWhy），留到
+ * 下一次点保存或离开这一页。等不到充电桩应答按「保存失败：充电桩没有应答」。换页回到「保存」，
+ * 组件卸掉时清掉定时器。 */
+const saveUi = reactive({});
+const saveBtns = createSaveBtns({
+  onChange: (id, state) => { saveUi[id] = state; },
+  onDone: (id, kind) => saveShown(id, kind),
+});
+function saveSt(id) { return saveUi[id] || SAVE_IDLE; }
+function saveLbl(id, idleText, brief) {
+  return saveLabel(saveSt(id), idleText == null ? t(SAVE_TEXT.idle) : idleText, t, brief);
+}
+function saveCls(id) { return saveClass(saveSt(id)); }
+function saveOff(id) { return saveLocked(saveSt(id)); }
+function saveTone(id) { return saveSt(id).tone; }
+function saveWhy(id) {
+  const detail = saveSt(id).detail;
+  return detail ? t(detail.text, detail.vars || undefined) : "";
+}
+/* 「保存成功」在按钮上显示完了：连热点回到首页（原来是一成功就跳走，按钮上的结果来不及看）。 */
+function saveShown(id, kind) {
+  if (kind === "ok" && id === "wifi" && page.value === "pass") {
+    page.value = "charge";
+    note.value = "已连接热点";
+  }
+}
+/* ports.js / par-switch.js 给的 { ok, text, vars } → 按钮。短的一句直接当按钮上的原因；
+ * 「没有保存。…」那种长的，按钮上写 why，整句放按钮下面。 */
+function saveFromOut(id, out, why) {
+  if (out.ok) return saveBtns.ok(id);
+  if (out.text === SAVE_SILENT) return saveBtns.silent(id);
+  if (why) return saveBtns.fail(id, why, { text: out.text, vars: out.vars });
+  return saveBtns.fail(id, out.text === "充电桩没有接受" ? "充电桩不接受" : out.text);
+}
+watch(page, () => saveBtns.resetAll());
 const typing = ref(false);
 function typingTarget(el) {
   if (!el || !el.tagName) return false;
@@ -1306,6 +1354,7 @@ onBeforeUnmount(() => {
   stopOtaClock();
   stopScanTimer();
   queue.reset();
+  saveBtns.dispose();
 });
 const tabBarOn = computed(() => tabBarShown(page.value, linkReady.value, gateState.value === "ok", typing.value));
 function scrollTop() {
@@ -1564,7 +1613,6 @@ const lteBusy = ref(false);           /* 开关或 APN 正在保存 */
 const lteNote = ref("");
 const lteApn = reactive({ proto: "0", apn: "", user: "", pass: "" });
 const lteApnDirty = ref(false);
-const lteApnNote = ref("");
 const lteStat = ref(null);            /* 最近一次 LTESTAT */
 const lteCell = ref(null);            /* 最近一次 LTECELL（频段、RSRQ、SINR、小区、IMSI） */
 const ltePassShow = ref(false);
@@ -1626,7 +1674,6 @@ function resetLte() {
   lteApn.user = "";
   lteApn.pass = "";
   lteApnDirty.value = false;
-  lteApnNote.value = "";
   lteStat.value = null;
   lteCell.value = null;
   ltePassShow.value = false;
@@ -1679,7 +1726,6 @@ async function startLtePage(skipRead) {
 function openLte() {
   menuPull++;
   lteNote.value = "";
-  lteApnNote.value = "";
   lteApnDirty.value = false;
   lteStat.value = null;
   lteCell.value = null;
@@ -1735,17 +1781,19 @@ async function setLteOn(on) {
 async function saveApn() {
   if (!lteReady.value || lteBusy.value) return;
   const cfg = { proto: lteApn.proto, apn: lteApn.apn, user: lteApn.user, pass: lteApn.pass };
+  /* 发命令、读回各有自己的超时（lte.js）；看门狗只是兜底。 */
+  if (!saveBtns.begin("apn", 20000)) return;
   if (apnError(cfg)) {
-    lteApnNote.value = "没有保存。APN 名称、账号、密码最长 32 个可见英文字符，不能有空格和双引号";
+    saveBtns.fail("apn", "APN 设置不对", "没有保存。APN 名称、账号、密码最长 32 个可见英文字符，不能有空格和双引号");
     return;
   }
   const token = ++lteRun;
   const io = lteIo(token, ["lte"]);
   lteBusy.value = true;
-  lteApnNote.value = "正在保存";
   const result = await sendLteSet(io, apnCommand(cfg));
   if (token !== lteRun) {
     lteBusy.value = false;
+    saveBtns.reset("apn");
     return;
   }
   if (result === "ok") {
@@ -1753,20 +1801,24 @@ async function saveApn() {
     const got = await readApn(io);
     if (token !== lteRun) {
       lteBusy.value = false;
+      saveBtns.reset("apn");
       return;
     }
     if (got) fillApn(got);
   }
   lteBusy.value = false;
-  if (result === "gone") return;
-  if (result === "ok") lteApnNote.value = "已保存。4G 模块会重新启动，用新的设置联网";
-  else if (result === "fail") lteApnNote.value = "没有保存。充电桩不接受这组 APN 设置";
-  else lteApnNote.value = "充电桩没有应答，没有保存";
+  if (result === "gone") {
+    saveBtns.reset("apn");
+    return;
+  }
+  /* 4G 模块自己重新启动，不用重启充电桩：按钮上是「保存成功」，下面一行说明。 */
+  if (result === "ok") saveBtns.ok("apn", "已保存。4G 模块会重新启动，用新的设置联网");
+  else if (result === "fail") saveBtns.fail("apn", "充电桩不接受", "没有保存。充电桩不接受这组 APN 设置");
+  else saveBtns.silent("apn");
   startLtePage(true);
 }
 /* 时区设置（命令见 tz.js）。点一格就存：TZSET，再 TZGET 读回来确认；桩里的时区、菜单上的字、
  * 高亮都以读回来的为准。 */
-const tzNote = ref("");
 const tzSaving = ref(false);
 const tzPick = ref(null);
 let tzRun = 0;
@@ -1778,7 +1830,7 @@ function resetTz() {
   tzRun += 1;
   tzSaving.value = false;
   tzPick.value = null;
-  tzNote.value = "";
+  saveBtns.reset("tz");
 }
 /* 时区页顶上的“充电桩当前时间”（命令见 charger-clock.js）。进页面读一次 TIMEGET，之后每秒按
  * 手机走过的时间往前推，字只在跨分时变；隔一阵再读一次校准。时区用 tzMin：点选的时区读回
@@ -1848,31 +1900,31 @@ function openTz() {
   startClk();
 }
 async function pickZone(zone) {
-  if (tzSaving.value) return;
+  if (tzSaving.value || saveOff("tz")) return;
   if (tzKnown.value && zone === tzMin.value) {
-    tzNote.value = "";
+    saveBtns.reset("tz");
     return;
   }
+  /* 点的那一格就是保存按钮：结果写在那一格上。saveZone 自己有超时，看门狗只是兜底。 */
+  if (!saveBtns.begin("tz", 20000)) return;
   const token = ++tzRun;
   const alive = () => token === tzRun && linkReady.value && page.value === "tz";
   tzSaving.value = true;
   tzPick.value = zone;
-  tzNote.value = "正在保存";
   const result = await saveZone({ ask, alive, tz: zone });
   if (token !== tzRun) return;
   tzSaving.value = false;
-  tzPick.value = null;
   if (result.state === "gone") {
-    tzNote.value = "";
+    saveBtns.reset("tz");
     return;
   }
   if (Number.isInteger(result.tz)) {
     tzMin.value = result.tz;
     tzKnown.value = true;
   }
-  if (result.state === "ok") tzNote.value = "已保存，断电后仍然有效";
-  else if (result.state === "silent") tzNote.value = "充电桩没有应答，没有保存";
-  else tzNote.value = "没有保存";
+  if (result.state === "ok") saveBtns.ok("tz");
+  else if (result.state === "silent") saveBtns.silent("tz");
+  else saveBtns.fail("tz");
   /* 顶上的时间已经按读回来的时区重算了；再从桩读一次。 */
   clkNow.value = Date.now();
   if (linkReady.value && page.value === "tz") readClk();
@@ -2193,6 +2245,9 @@ async function runProfileJob(mode, body, name) {
   profileDoneNote.value = failed ? "有项目没有写上" : "下发完成";
 }
 /* 发一条设置命令，应答由 applyAck 出字；等不到应答时在这里出字。 */
+/* 「保存」按钮的看门狗：sendSet 的命令要在队列里排队（前面可能还有每秒的读取），再等 3 秒
+ * 应答；正常都是 onSilent 先报「没有应答」，这个只是兜底（比如等的时候蓝牙断了）。 */
+const SET_WATCH_MS = 12000;
 async function sendSet(command, ackHead, onSilent) {
   const line = await ask(command, head(ackHead), 3000);
   if (line === null && linkReady.value && onSilent) onSilent();
@@ -2205,13 +2260,13 @@ function openOcfw() {
 }
 function saveOcfw() {
   const text = String(ocfwText.value || "");
+  if (!saveBtns.begin("ocfw", SET_WATCH_MS)) return;
   if (text.length > 20 || (text.length > 0 && /[^\x21-\x7E]/.test(text))) {
-    ocfwNote.value = "没有保存。版本号最长 20 位，只能是可见英文字符";
+    saveBtns.fail("ocfw", "版本号不对", "没有保存。版本号最长 20 位，只能是可见英文字符");
     return;
   }
-  ocfwNote.value = "正在保存";
   sendSet("OCFWSET\t" + (ocfwOn.value ? "1" : "0") + "\t" + text, "ACK OCFWSET", () => {
-    ocfwNote.value = "充电桩没有应答，没有保存";
+    saveBtns.silent("ocfw");
   });
 }
 function openTelemetry() {
@@ -2483,17 +2538,18 @@ async function savePay() {
   /* 老固件（没有 payHold）PAYSET 带了持续秒数会回 FAIL：只发收费模型和门槛。 */
   const holdOk = can("payHold");
   const hold = holdOk ? plimValue(payHoldS.value, pay.holdMin, pay.holdMax) : undefined;
+  if (!saveBtns.begin("pay", SET_WATCH_MS)) return;
   if (watts === null || hold === null) {
-    payNote.value = "数值不在这台桩允许的范围内";
+    saveBtns.fail("pay", "数值超出范围", "数值不在这台桩允许的范围内");
     return;
   }
   payBusy.value = true;
-  payNote.value = "正在保存";
+  payNote.value = "";
   const line = await ask(payCommand(payModel.value, watts, hold), (text) => parsePaySet(text) !== null, 3000);
   payBusy.value = false;
-  if (line === null) payNote.value = "充电桩没有应答";
-  else if (parsePaySet(line)) payNote.value = "已保存，断电后仍然有效";
-  else payNote.value = "充电桩没有接受";
+  if (line === null) saveBtns.silent("pay");
+  else if (parsePaySet(line)) saveBtns.ok("pay");
+  else saveBtns.fail("pay", "充电桩不接受");
   if (line !== null) await readPay();
 }
 function applyPar(got) {
@@ -2543,9 +2599,13 @@ function cancelPar() {
   parAsk.value = false;
   setParNote("", null, false);
 }
+/* 切换没成：按钮上的短原因（整句在按钮下面）。 */
+const PAR_FAIL_WHY = { timeout: "还有端口没停", link: "蓝牙断开了", rejected: "充电桩不接受", mismatch: "没有切换成功" };
 /* 确认以后：STOP⇥0 → 等各路都停下 → PARSET → 读回核对（par-switch.js），最多 30 秒。 */
 async function confirmPar() {
   if (!can("parallel")) return;
+  /* 整个切换最多 30 秒（par-switch.js 自己算），看门狗放在它后面兜底。 */
+  if (!saveBtns.begin("par", PAR_SWITCH_TIMEOUT_MS + 15000)) return;
   const mode = parPick.value;
   const token = ++parRun;
   const addr = linkAddr.value;
@@ -2561,10 +2621,21 @@ async function confirmPar() {
       setParNote(shown.text, shown.vars, false);
     },
   }, mode, { timeoutMs: PAR_SWITCH_TIMEOUT_MS });
-  if (token !== parRun) return;
+  if (token !== parRun) {
+    saveBtns.reset("par");
+    return;
+  }
   parBusy.value = false;
   const shown = parSwitchText(out);
-  setParNote(shown.text, shown.vars, !shown.ok);
+  /* 进度那一行收掉；结果写在按钮上，整句放按钮下面。切换后桩自己重启、重启后才按新模式跑
+   * → 「保存成功，重启生效」；模式和这次运行的一样（不用重启）→ 「保存成功」。 */
+  setParNote("", null, false);
+  const detail = { text: shown.text, vars: shown.vars };
+  if (out.code === "done") {
+    if (out.restart) saveBtns.restart("par", detail);
+    else saveBtns.ok("par", detail);
+  } else if (out.code === "noreply") saveBtns.silent("par");
+  else saveBtns.fail("par", PAR_FAIL_WHY[out.code] || "", detail);
   if (out.code === "done") par.saved = mode;
   /* 桩要重启，或者蓝牙已经断了：断开以后在选择充电桩页上留一行，重新连上这台桩时再核对。 */
   if ((out.code === "done" && out.restart) || out.code === "link") {
@@ -2647,6 +2718,8 @@ function noteSaved(port, watts) {
     }
   }
 }
+/* 功率上限的看门狗：一路一条 PLIMSET，每条在队列里最多等 3 秒，10 路全改再加读回。 */
+const PLIM_WATCH_MS = 60000;
 function readPlim() {
   return ask("PLIMGET", (line) => parsePlim(line) !== null, 2500);
 }
@@ -2672,11 +2745,17 @@ async function plimSend(port, watts) {
   }, 3000);
   return portAckText("PLIMSET", line === null ? null : parsePortAck(line), { min: plimMin.value, max: plimMax.value });
 }
-function plimBad(port) {
-  plimNote.value = port
-    ? "没有保存。第 {n} 路的功率上限只能是 {min} 到 {max} W 的整数"
-    : "没有保存。功率上限只能是 {min} 到 {max} W";
-  plimNoteVars.value = { n: port, min: plimMin.value, max: plimMax.value };
+function plimBad(id, port) {
+  saveBtns.fail(id, "功率上限不对", {
+    text: port
+      ? "没有保存。第 {n} 路的功率上限只能是 {min} 到 {max} W 的整数"
+      : "没有保存。功率上限只能是 {min} 到 {max} W",
+    vars: { n: port, min: plimMin.value, max: plimMax.value },
+  });
+}
+/* PLIMSET 的结果 → 按钮。量程不对的那一句长，按钮上写「功率上限不对」。 */
+function plimShown(id, out) {
+  saveFromOut(id, out, out.text.indexOf("没有保存") === 0 || out.text === "数值不在这台桩允许的范围内" ? "功率上限不对" : "");
 }
 async function plimEnsure() {
   if (plimKnown.value) return true;
@@ -2686,20 +2765,21 @@ async function plimEnsure() {
   return plimKnown.value;
 }
 async function savePlimOne() {
-  if (plimBusy.value) return;
+  if (plimBusy.value || !saveBtns.begin("plimOne", PLIM_WATCH_MS)) return;
   const port = portSel.value;
   plimBusy.value = true;
   if (!(await plimEnsure())) {
     plimBusy.value = false;
+    saveBtns.silent("plimOne");
     return;
   }
   const watts = plimValue(plimOne.value, plimMin.value, plimMax.value);
   if (watts === null) {
     plimBusy.value = false;
-    plimBad(0);
+    plimBad("plimOne", 0);
     return;
   }
-  plimNote.value = "正在保存";
+  plimNote.value = "";
   const out = await plimSend(port, watts);
   if (out.ok) {
     noteSaved(port, watts);
@@ -2707,17 +2787,16 @@ async function savePlimOne() {
     await readPlim();
   }
   plimBusy.value = false;
-  plimNote.value = out.text;
-  plimNoteVars.value = out.vars;
+  plimShown("plimOne", out);
   if (page.value === "port") pollPort();
 }
 async function savePlimList() {
-  if (plimBusy.value || !plimKnown.value) return;
+  if (plimBusy.value || !plimKnown.value || !saveBtns.begin("plimList", PLIM_WATCH_MS)) return;
   const want = [];
   for (let i = 0; i < plimInputs.value.length; i++) {
     const watts = plimValue(plimInputs.value[i], plimMin.value, plimMax.value);
     if (watts === null) {
-      plimBad(i + 1);
+      plimBad("plimList", i + 1);
       return;
     }
     want.push(watts);
@@ -2727,11 +2806,12 @@ async function savePlimList() {
     if (watts !== plimLimits.value[index]) changed.push(index + 1);
   });
   if (!changed.length) {
-    plimNote.value = "没有改动";
+    /* 填的和桩里的一样，什么都不用发：算保存成功，下面一行写「没有改动」。 */
+    saveBtns.ok("plimList", "没有改动");
     return;
   }
   plimBusy.value = true;
-  plimNote.value = "正在保存";
+  plimNote.value = "";
   let out = null;
   for (let i = 0; i < changed.length; i++) {
     const port = changed[i];
@@ -2745,18 +2825,17 @@ async function savePlimList() {
     await readPlim();
   }
   plimBusy.value = false;
-  plimNote.value = out.text;
-  plimNoteVars.value = out.vars;
+  plimShown("plimList", out);
 }
 async function savePlimAll() {
-  if (plimBusy.value || !plimKnown.value) return;
+  if (plimBusy.value || !plimKnown.value || !saveBtns.begin("plimAll", PLIM_WATCH_MS)) return;
   const watts = plimValue(plimAll.value, plimMin.value, plimMax.value);
   if (watts === null) {
-    plimBad(0);
+    plimBad("plimAll", 0);
     return;
   }
   plimBusy.value = true;
-  plimNote.value = "正在保存";
+  plimNote.value = "";
   const out = await plimSend(0, watts);
   if (out.ok) {
     noteSaved(0, watts);
@@ -2765,8 +2844,7 @@ async function savePlimAll() {
     await readPlim();
   }
   plimBusy.value = false;
-  plimNote.value = out.text;
-  plimNoteVars.value = out.vars;
+  plimShown("plimAll", out);
 }
 
 /* 每秒一拍：选枪倒计时；队列空着时，详情页问一次 PORTGET；首页每 1.5 秒以上要一次快照
@@ -2940,12 +3018,26 @@ function stopWifiJoin(message) {
     clearTimeout(wifiJoinTimer);
     wifiJoinTimer = 0;
   }
-  if (message) wifiNote.value = message;
+  if (!message) {
+    /* 取消、换页、换桩：还在「保存中…」的按钮回到原样。 */
+    if (saveSt("wifi").kind === "busy") saveBtns.reset("wifi");
+    return;
+  }
+  /* 没连上：写在「连接并保存」按钮上，完整的一句在按钮下面；不在这一页时还是写到提示里。 */
+  const why = WIFI_JOIN_WHY[message] || "";
+  if (!saveBtns.fail("wifi", why, why ? message : null)) wifiNote.value = message;
 }
+const WIFI_JOIN_WHY = {
+  "连接超时，可以再输入密码并连接": "连接超时",
+  "没有连上，可以再输入密码并连接": "没有连上",
+  [NET_OFF_NOTE]: "联网开关关着",
+};
 function joinWifi() {
   if (wifiJoining.value) return;
+  /* 连热点最长等 25 秒（下面的定时器），看门狗放在它后面兜底。 */
+  if (!saveBtns.begin("wifi", 30000)) return;
   if (netOff.value) {
-    wifiNote.value = NET_OFF_NOTE;
+    saveBtns.fail("wifi", "联网开关关着", NET_OFF_NOTE);
     return;
   }
   const ssid = picked.value;
@@ -2953,19 +3045,17 @@ function joinWifi() {
   const ssidBytes = new TextEncoder().encode(ssid).length;
   const passBytes = new TextEncoder().encode(pass).length;
   if (!ssidBytes || ssidBytes > 32 || passBytes > 32 || /[\t\n]/.test(ssid + pass)) {
-    wifiNote.value = "名称或密码不能用，最长 32 字节";
+    saveBtns.fail("wifi", "名称或密码不对", "名称或密码不能用，最长 32 字节");
     return;
   }
   wifiJoinWanted = ssid;
   wifiJoining.value = true;
   wifiJoinStart = Date.now();
-  wifiNote.value = "正在连接热点，请稍后";
   if (wifiJoinTimer) clearTimeout(wifiJoinTimer);
   wifiJoinTimer = setTimeout(() => {
     wifiJoinTimer = 0;
     if (!wifiJoining.value) return;
-    wifiJoining.value = false;
-    wifiNote.value = "连接超时，可以再输入密码并连接";
+    stopWifiJoin("连接超时，可以再输入密码并连接");
   }, 25000);
   ask("WJOIN\t" + ssid + "\t" + pass, head("ACK WJOIN"), 3000);
 }
@@ -2983,15 +3073,15 @@ function openNetStop() {
 }
 function saveNetStop() {
   const sec = parseInt(String(netStopSec.value).trim(), 10);
+  if (!saveBtns.begin("netstop", SET_WATCH_MS)) return;
   if (!Number.isFinite(sec) || sec < 10 || sec > 600) {
-    netStopNote.value = "没有保存。时长只能是 10 到 600 秒";
+    saveBtns.fail("netstop", "时长不对", "没有保存。时长只能是 10 到 600 秒");
     return;
   }
   netStopHold.value = Date.now() + 2500;
-  netStopNote.value = "正在保存";
   sendSet("NETSTOPSET\t" + (netStopOn.value ? "1" : "0") + "\t" + sec, "ACK NETSTOPSET", () => {
     netStopHold.value = 0;
-    netStopNote.value = "充电桩没有应答，没有保存";
+    saveBtns.silent("netstop");
   });
 }
 function openReboot() {
@@ -3021,17 +3111,17 @@ function setOcppOn(on, box) {
 }
 function saveOcpp() {
   const url = ocppUrl.value.trim();
+  if (!saveBtns.begin("ocpp", SET_WATCH_MS)) return;
   if (!ocppUrlOk(url)) {
-    ocppNote.value = "地址需要是 ws(s)://主机/路径，最长 127 字节";
+    saveBtns.fail("ocpp", "地址不对", "地址需要是 ws(s)://主机/路径，最长 127 字节");
     return;
   }
   /* 1.3.0 以前的固件不认 wss://（fw-compat.js 的 ocppWss），发了也是 FAIL。 */
   if (/^wss:/i.test(url) && !can("ocppWss")) {
-    ocppNote.value = lackNote(fwInfo.value, "ocppWss", "wss");
+    saveBtns.fail("ocpp", "固件太旧", lackNote(fwInfo.value, "ocppWss", "wss"));
     return;
   }
-  ocppNote.value = "正在保存";
-  sendSet("OCPPSET\t" + url, "ACK OCPPSET", () => { ocppNote.value = "充电桩没有应答，没有保存"; });
+  sendSet("OCPPSET\t" + url, "ACK OCPPSET", () => { saveBtns.silent("ocpp"); });
 }
 function openCfg() {
   page.value = "cfg";
@@ -3039,15 +3129,15 @@ function openCfg() {
   fetchLine("CFGGET", "CFG ");
 }
 function saveCfg() {
+  if (!saveBtns.begin("cfg", SET_WATCH_MS)) return;
   const limitError = voltageLimitError(cfg.over, cfg.under);
   if (limitError) {
-    cfgNote.value = limitError;
+    saveBtns.fail("cfg", "电压范围不对", limitError);
     return;
   }
-  cfgNote.value = "正在保存";
   const over = Math.round(Number(String(cfg.over).trim()));
   const under = Math.round(Number(String(cfg.under).trim()));
-  sendSet("CFGSET\t" + over + "\t" + under, "ACK CFGSET", () => { cfgNote.value = "充电桩没有应答，没有保存"; });
+  sendSet("CFGSET\t" + over + "\t" + under, "ACK CFGSET", () => { saveBtns.silent("cfg"); });
 }
 
 const wifiLinks = {
@@ -3087,9 +3177,14 @@ function applyWifiConfig(link, ssid) {
   }
   if (wifiJoinWanted && sameSsid(saved, wifiJoinWanted) && link === "UP" && Date.now() - wifiJoinStart >= 800) {
     wifiJoinWanted = "";
+    /* 「保存成功」先在按钮上显示完，再回首页（saveShown）。不是从这个按钮连的（没在保存中）
+     * 就照旧马上回首页。 */
+    const shown = saveBtns.ok("wifi");
     stopWifiJoin("");
-    page.value = "charge";
-    note.value = "已连接热点";
+    if (!shown) {
+      page.value = "charge";
+      note.value = "已连接热点";
+    }
     return;
   }
   if (wifiJoining.value && sameSsid(saved, picked.value) && link === "FAIL") {
@@ -3180,10 +3275,10 @@ function applyAck(line) {
   if (name === "NETSTOPSET") {
     netStopHold.value = 0;
     if (ok) {
-      netStopNote.value = "已保存，断电后仍然有效";
+      saveBtns.ok("netstop");
       return;
     }
-    netStopNote.value = "没有保存。时长只能是 10 到 600 秒";
+    saveBtns.fail("netstop", "时长不对", "没有保存。时长只能是 10 到 600 秒");
     fetchLine("NETSTOPGET", "NETSTOP ");
     return;
   }
@@ -3224,21 +3319,21 @@ function applyAck(line) {
     return;
   }
   if (name === "CFGSET") {
-    cfgNote.value = ok
-      ? "已保存，断电后仍然有效"
-      : "没有保存。过压不超过 320 V，欠压不低于 100 V，且比过压至少低 10 V";
+    if (ok) saveBtns.ok("cfg");
+    else saveBtns.fail("cfg", "电压范围不对", "没有保存。过压不超过 320 V，欠压不低于 100 V，且比过压至少低 10 V");
     return;
   }
   /* AUTH 的应答和 "ACK <命令名> AUTH" 不在这里：applyLine 一开头就交给 applyAuthLine()
    * 了。按整行的格式认，"已锁定"和"这条连接还没通过鉴权"不会被当成密码不对。 */
   if (name === "OCFWSET") {
-    ocfwNote.value = ok
-      ? "已保存。连平台时按这个版本号上报，充电桩固件版本不变"
-      : "没有保存。版本号最长 20 位，只能是可见英文字符";
+    if (ok) saveBtns.ok("ocfw");
+    else saveBtns.fail("ocfw", "版本号不对", "没有保存。版本号最长 20 位，只能是可见英文字符");
     return;
   }
   if (name === "OCPPSET") {
-    ocppNote.value = ok ? "已保存，正在重新连接" : "没有保存";
+    /* 桩自己重新连接平台，不用重启：「保存成功」，下面一行说明。 */
+    if (ok) saveBtns.ok("ocpp", "已保存，正在重新连接");
+    else saveBtns.fail("ocpp");
     return;
   }
   if (name === "WJOIN") {

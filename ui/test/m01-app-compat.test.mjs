@@ -120,7 +120,9 @@ test("1.3.0 的桩：充电规则只发两个参数，保存成功；持续时�
   app.click((n) => textOf(n) === "保存");
   await run(4000);
   assert.deepEqual(sentHead(app, "PAYSET"), ["PAYSET\t1\t10"]);
-  assert.ok(app.text().includes("已保存，断电后仍然有效"));
+  /* 结果写在保存按钮上，2.5 秒后变回「保存」（run(4000) 已经过了这 2.5 秒）。 */
+  assert.ok(!app.text().includes("已保存，断电后仍然有效"));
+  assert.equal(app.buttons((n) => textOf(n) === "保存").length, 1, "按钮要变回「保存」");
   assert.equal(pile.state.fullW, 10);
   app.click("返回");
   await run(15000);

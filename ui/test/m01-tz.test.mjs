@@ -172,7 +172,14 @@ test("App.vue：时区页用到的字符串每种语言的表里都有；没有�
   const used = new Set();
   for (const m of tzPage[0].matchAll(/t\('([^']+)'\)/g)) used.add(m[1]);
   const script = vue.slice(vue.indexOf("<script"));
-  for (const m of script.matchAll(/tzNote\.value = "([^"]+)"/g)) used.add(m[1]);
+  assert.ok(!/tzNote/.test(vue), "tzNote 还在：保存结果写在点的那一格上");
+  /* 保存的结果写在按钮上（save-btn.js）：按钮上的短原因和按钮下面那一行说明也要有译文。 */
+  for (const id of ["tz"]) {
+    for (const m of script.matchAll(new RegExp("saveBtns\\.(?:ok|restart|fail|silent)\\(\"" + id + "\"((?:, \"[^\"]*\")*)\\)", "g"))) {
+      for (const one of m[1].matchAll(/"([^"]+)"/g)) used.add(one[1]);
+    }
+  }
+  ["保存中…", "保存成功", "保存失败", "保存失败：{why}", "充电桩没有应答"].forEach((key) => used.add(key));
   used.add("时区设置");
   used.add("充电记录和首页的钟点按这个时区");
   assert.ok(used.size >= 10);

@@ -145,6 +145,13 @@ test("App.vue：相位页、菜单、提示用到的字符串在每种语言里�
   for (const item of PHASES) used.add(item.name);
   const script = vue.slice(vue.indexOf("<script"));
   for (const m of script.matchAll(/phaseNote\.value = "([^"]+)"/g)) used.add(m[1]);
+  /* 保存的结果写在按钮上（save-btn.js）：按钮上的短原因和按钮下面那一行说明也要有译文。 */
+  for (const id of ["phase"]) {
+    for (const m of script.matchAll(new RegExp("saveBtns\\.(?:ok|restart|fail|silent)\\(\"" + id + "\"((?:, \"[^\"]*\")*)\\)", "g"))) {
+      for (const one of m[1].matchAll(/"([^"]+)"/g)) used.add(one[1]);
+    }
+  }
+  ["保存中…", "保存成功", "保存失败", "保存失败：{why}", "充电桩没有应答"].forEach((key) => used.add(key));
   assert.ok(used.has("充电桩正在充电，不能改相位。请先停止充电再改"));
   assert.ok(used.has("充电桩没有应答。充电桩固件可能太旧，需要升级后再设置"));
   assert.ok(used.size >= 12);

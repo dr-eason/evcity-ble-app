@@ -180,6 +180,13 @@ test("App.vue：屏幕颜色页、菜单、提示用到的字符串在每种语�
   for (const item of SCREEN_THEMES) used.add(item.name);
   const script = vue.slice(vue.indexOf("<script"));
   for (const m of script.matchAll(/scrThemeNote\.value = "([^"]+)"/g)) used.add(m[1]);
+  /* 保存的结果写在按钮上（save-btn.js）：按钮上的短原因和按钮下面那一行说明也要有译文。 */
+  for (const id of ["scrtheme"]) {
+    for (const m of script.matchAll(new RegExp("saveBtns\\.(?:ok|restart|fail|silent)\\(\"" + id + "\"((?:, \"[^\"]*\")*)\\)", "g"))) {
+      for (const one of m[1].matchAll(/"([^"]+)"/g)) used.add(one[1]);
+    }
+  }
+  ["保存中…", "保存成功", "保存失败", "保存失败：{why}", "充电桩没有应答"].forEach((key) => used.add(key));
   assert.ok(used.size >= 16);
   assert.match(vue, /@click="openScrTheme"/);
   assert.match(vue, /if \(page\.value === "scrtheme"\) return "屏幕颜色";/);

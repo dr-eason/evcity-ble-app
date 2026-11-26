@@ -7,6 +7,7 @@ import { ltePacks } from "./packs-lte.js";
 import { m01Packs } from "./packs-m01.js";
 import { authPacks } from "./packs-auth.js";
 import { compatPacks } from "./packs-compat.js";
+import { saveBtnPacks } from "./packs-savebtn.js";
 
 const en = {
   "返回": "Back",
@@ -431,6 +432,11 @@ const packs = { en, fr, ja, de, es, pt, ru, hi, ar, bn, id, ur };
  * 需升级固件）的在 packs-compat.js，都并进各语言的表。 */
 [tzPacks, ltePacks, m01Packs, authPacks, compatPacks].forEach((extra) => {
   Object.keys(extra).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], extra[lang]); });
+});
+/* 设置页「保存」按钮上的结果和短原因（save-btn.js）：packs-savebtn.js。表里已经有的句子不覆盖。 */
+Object.keys(saveBtnPacks).forEach((lang) => {
+  if (!packs[lang]) return;
+  Object.keys(saveBtnPacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = saveBtnPacks[lang][key]; });
 });
 
 /* 这种语言的表里有没有这一句（不算回退到英文、不算按行首匹配）。测试用。 */

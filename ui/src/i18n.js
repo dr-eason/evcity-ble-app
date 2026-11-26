@@ -11,6 +11,7 @@ import { layoutPacks } from "./packs-layout.js";
 import { phasePacks } from "./packs-phase.js";
 import { gbStopPacks } from "./packs-gbstop.js";
 import { mergePacks } from "./packs-merge.js";
+import { saveBtnPacks } from "./packs-savebtn.js";
 
 const en = {
   "返回": "Back",
@@ -853,6 +854,11 @@ Object.keys(phasePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs
 Object.keys(gbStopPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], gbStopPacks[lang]); });
 /* 合并 AC06 + M01：扫描页上的两种桩、认类型、换模块、固件和一键配置不能混用：packs-merge.js。 */
 Object.keys(mergePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], mergePacks[lang]); });
+/* 设置页「保存」按钮上的结果和短原因（save-btn.js）：packs-savebtn.js。表里已经有的句子不覆盖。 */
+Object.keys(saveBtnPacks).forEach((lang) => {
+  if (!packs[lang]) return;
+  Object.keys(saveBtnPacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = saveBtnPacks[lang][key]; });
+});
 
 export function translate(lang, text, vars) {
   const key = text == null ? "" : String(text);
