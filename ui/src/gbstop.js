@@ -3,7 +3,7 @@
  *
  * 关：桩一收到停止就断开继电器。
  * 开：桩先停方波通知车辆，CP 还在 6 V 就保持继电器吸合，等 CP 离开 6 V（车回到 9 V）再断开
- *     继电器，最多等 6 秒（只看 CP，不看电流）；这 6 秒里再发停止不算，新的启动被拒绝。安全故障、拔枪照旧立即断开。
+ *     继电器，最多等 6.5 秒（只看 CP，不看电流；标准要求超过 6 秒才强制断开，3.0.5 及更早的固件是 6 秒）；这段时间里再发停止不算，新的启动被拒绝。安全故障、拔枪照旧立即断开。
  *
  * 命令（固件 wb2.c，要先 AUTH 通过）：
  *   GBSTOPGET              应答 ACK GBSTOPGET 0 / ACK GBSTOPGET 1
@@ -16,8 +16,9 @@
  *
  * 这个文件不碰界面和蓝牙，主机测试 ui/test/gbstop.test.mjs 直接用。 */
 
-/* 桩最多等这么久。 */
-export const GB_WAIT_MS = 6000;
+/* 桩最多等这么久（固件 charge_control.c 的 GB_STOP_OPEN_TICKS，3.0.6 起 6.5 秒）。老固件报的
+ * 剩余时间最多 6000，倒计时跟着桩报的走，不受影响。 */
+export const GB_WAIT_MS = 6500;
 /* 点了停止以后，桩过了这么久还说“没有在等”，就不再等它（停止没有进等车这一步，
  * 比如车已经自己停了）。桩开始等车时 20 ms 左右就会补发状态，最迟 1 秒。 */
 export const GB_SETTLE_MS = 1500;
@@ -69,7 +70,7 @@ export function resetStopGuard(guard) {
   guard.seen = false;
 }
 
-/* 现在按钮什么样：{ disabled, seconds }。seconds 是按钮上的倒计时（6、5……1），没在等是 0。 */
+/* 现在按钮什么样：{ disabled, seconds }。seconds 是按钮上的倒计时（7、6……1；7 只在头半秒），没在等是 0。 */
 export function stopView(guard, now) {
   const left = guard.until - now;
   if (!(left > 0)) return { disabled: false, seconds: 0 };

@@ -65,10 +65,12 @@ test("固件认这两条命令，应答、LIVE 字段、OCPP 键和这里解析�
   assert.ok(java.includes('line.startsWith("ACK ")') && java.includes('line.startsWith("LIVE ")'));
   const swift = read("AC06/tools/ble-ios/Core/Sources/EVCCore/FrameParser.swift");
   assert.ok(swift.includes('"ACK "') && swift.includes('"LIVE "'));
-  /* 桩最多等 6 秒，和这里的倒计时一样长。 */
+  /* 桩最多等 6.5 秒（3.0.6；标准要求超过 6 秒才强制断开），和这里的倒计时一样长。Smart Charging
+   * 暂停那个 6 秒（PAUSE_OPEN_TICKS）是另一个数，没有变。 */
   const charge = read("AC06/app/src/charge_control.c");
+  assert.match(charge, /#define GB_STOP_OPEN_TICKS\s+\(6500u \/ CHARGE_TICK_MS\)/);
   assert.match(charge, /#define PAUSE_OPEN_TICKS\s+\(6000u \/ CHARGE_TICK_MS\)/);
-  assert.equal(GB_WAIT_MS, 6000);
+  assert.equal(GB_WAIT_MS, 6500);
 });
 
 test("解析：ACK GBSTOPGET 0/1、ACK GBSTOPSET OK/FAIL/BUSY；别的行和鉴权应答不认", () => {
@@ -88,8 +90,9 @@ test("LIVE 行：这一版多三个字段；旧固件的两种写法返回 null�
   assert.deepEqual(liveGbStop("LIVE 0.4 6.02 -52 0 0 0"), { on: false, waiting: false, remainMs: 0 });
   assert.deepEqual(liveGbStop("LIVE 0.4 6.02 -52 1 0 0"), { on: true, waiting: false, remainMs: 0 });
   assert.deepEqual(liveGbStop("LIVE 0.4 6.02 -52 1 1 5990"), { on: true, waiting: true, remainMs: 5990 });
+  assert.deepEqual(liveGbStop("LIVE 0.4 6.02 -52 1 1 6490"), { on: true, waiting: true, remainMs: 6490 });
   assert.deepEqual(liveGbStop("LIVE 0.4 6.02 - 1 1 10"), { on: true, waiting: true, remainMs: 10 });
-  /* 剩余时间不会超过 6 秒；没有在等时一律是 0。 */
+  /* 剩余时间不会超过 6.5 秒；没有在等时一律是 0。 */
   assert.equal(liveGbStop("LIVE 0.4 6.02 -52 1 1 65535").remainMs, GB_WAIT_MS);
   assert.equal(liveGbStop("LIVE 0.4 6.02 -52 1 0 3000").remainMs, 0);
   for (const line of ["LIVE 0.4 11.98", "LIVE 0.4 11.98 -62", "LIVE 0.4 11.98 -", "LIVE 0.4 6.02 -52 1 1",
@@ -160,33 +163,37 @@ test("设置开着、没有在充电：停止照发，按钮不置灰", () => {
   assert.deepEqual(stopView(guard, 5000), { disabled: false, seconds: 0 });
 });
 
-test("设置开着、充电中点停止：按钮置灰，倒计时 6 秒，这期间再点不发；到点自己放开", () => {
+test("设置开着、充电中点停止：按钮置灰，倒计时 6.5 秒，这期间再点不发；到点自己放开", () => {
   const guard = newStopGuard();
   const t0 = 2000000;
   assert.equal(stopTap(guard, t0, { gbOn: true, charging: true }), true);
-  assert.deepEqual(stopView(guard, t0), { disabled: true, seconds: 6 });
+  assert.deepEqual(stopView(guard, t0), { disabled: true, seconds: 7 });
   /* 再点：不发 STOP，倒计时不重新开始。 */
   assert.equal(stopTap(guard, t0 + 200, { gbOn: true, charging: true }), false);
   assert.equal(stopTap(guard, t0 + 2500, { gbOn: true, charging: true }), false);
-  assert.deepEqual(stopView(guard, t0 + 1), { disabled: true, seconds: 6 });
-  assert.deepEqual(stopView(guard, t0 + 1000), { disabled: true, seconds: 5 });
-  assert.deepEqual(stopView(guard, t0 + 1001), { disabled: true, seconds: 5 });
+  assert.deepEqual(stopView(guard, t0 + 1), { disabled: true, seconds: 7 });
+  assert.deepEqual(stopView(guard, t0 + 499), { disabled: true, seconds: 7 });
+  assert.deepEqual(stopView(guard, t0 + 500), { disabled: true, seconds: 6 });
+  assert.deepEqual(stopView(guard, t0 + 1000), { disabled: true, seconds: 6 });
+  assert.deepEqual(stopView(guard, t0 + 1500), { disabled: true, seconds: 5 });
   assert.deepEqual(stopView(guard, t0 + 2500), { disabled: true, seconds: 4 });
-  assert.deepEqual(stopView(guard, t0 + 5000), { disabled: true, seconds: 1 });
-  assert.deepEqual(stopView(guard, t0 + 5999), { disabled: true, seconds: 1 });
+  assert.deepEqual(stopView(guard, t0 + 5500), { disabled: true, seconds: 1 });
+  assert.deepEqual(stopView(guard, t0 + 6499), { disabled: true, seconds: 1 });
   assert.deepEqual(stopView(guard, t0 + GB_WAIT_MS), { disabled: false, seconds: 0 });
   /* 放开以后再点：又是一轮。 */
   assert.equal(stopTap(guard, t0 + 7000, { gbOn: true, charging: true }), true);
-  assert.equal(stopView(guard, t0 + 7000).seconds, 6);
+  assert.equal(stopView(guard, t0 + 7000).seconds, 7);
 });
 
 test("桩报正在等车：倒计时跟桩的剩余时间走；桩报继电器断开（不再等）：提前放开", () => {
   const guard = newStopGuard();
   const t0 = 3000000;
   assert.equal(stopTap(guard, t0, { gbOn: true, charging: true }), true);
-  /* 20 ms 后桩补发的状态：正在等，还剩 5990 ms。 */
-  stopLive(guard, liveGbStop("LIVE 0.4 6.02 -52 1 1 5990"), t0 + 60);
-  assert.deepEqual(stopView(guard, t0 + 60), { disabled: true, seconds: 6 });
+  /* 20 ms 后桩补发的状态：正在等，还剩 6490 ms。 */
+  stopLive(guard, liveGbStop("LIVE 0.4 6.02 -52 1 1 6490"), t0 + 60);
+  assert.deepEqual(stopView(guard, t0 + 60), { disabled: true, seconds: 7 });
+  stopLive(guard, liveGbStop("LIVE 0.4 6.02 -52 1 1 5490"), t0 + 1060);
+  assert.deepEqual(stopView(guard, t0 + 1060), { disabled: true, seconds: 6 });
   stopLive(guard, liveGbStop("LIVE 0.4 6.02 -52 1 1 4990"), t0 + 1060);
   assert.deepEqual(stopView(guard, t0 + 1060), { disabled: true, seconds: 5 });
   /* 状态行还是 CHARGING：不放开。 */
@@ -234,7 +241,7 @@ test("别处发起的停止（屏上点的、平台远程）：手机没点，�
   assert.deepEqual(stopView(guard, t0 + 1000), { disabled: true, seconds: 4 });
   /* 桩不再发状态（蓝牙断了一下）：按最后一次报的剩余时间到点放开，不会一直灰着。 */
   assert.equal(stopView(guard, t0 + 1000 + 3200).disabled, false);
-  /* 等满 6 秒强制断开那一下。 */
+  /* 等满 6.5 秒强制断开那一下。 */
   const again = newStopGuard();
   stopLive(again, liveGbStop("LIVE 0.4 6.02 -52 1 1 10"), t0);
   stopLive(again, liveGbStop("LIVE 0.4 6.02 -52 1 0 0"), t0 + 20);
@@ -263,10 +270,10 @@ test("12 种语言的文案都齐，不是中文键、也不是英文原样", ()
       assert.ok(!/[一-鿿]/.test(out) || lang === "ja", lang + " 里还有汉字: " + key);
       if (lang !== "en") assert.notEqual(gbStopPacks[lang][key], gbStopPacks.en[key], lang + " 用了英文: " + key);
     }
-    /* 标准号每种语言都原样带着；页面说明里 6 秒这个数也都在。 */
+    /* 标准号每种语言都原样带着；页面说明里 6.5 秒这个数也都在（小数点按各语言写成 . 或 ,）。 */
     assert.ok(translate(lang, "按 GB/T 18487.1-2023 的停止和故障时序").includes("GB/T 18487.1-2023"), lang);
     assert.ok(translate(lang, GB_STOP_KEYS[3]).includes("GB/T 18487.1-2023"), lang);
-    assert.match(translate(lang, GB_STOP_KEYS[3]), /6|৬/, lang);
+    assert.match(translate(lang, GB_STOP_KEYS[3]), /6[.,]5|৬\.৫/, lang);
     assert.match(translate(lang, GB_STOP_KEYS[3]), /100/, lang);
     /* 旧名字（新国标 6 秒停充 / GB 6-second stop）不再出现在界面上。 */
     for (const key of GB_STOP_KEYS.slice(0, 3)) assert.ok(!/GB 6|GB-Stopp|GB en 6|GB em 6|GB ৬|GB за 6/.test(translate(lang, key)), lang + ": " + key);

@@ -15,7 +15,7 @@
     { name: "EVC-AC06-0002", addr: "5A1C0002-7E57-4AC6-9F00-000000000002", rssi: -63 },
     { name: "EVC-AC06-0003", addr: "5A1C0003-7E57-4AC6-9F00-000000000003", rssi: -79 }
   ];
-  var FW = "3.0.5";
+  var FW = "3.0.6";
 
   var queue = [];
   var draining = false;
@@ -107,7 +107,7 @@
     var lines = [];
     lines.push(pile.lte ? "ACK LTEB UP\t-85\tMOCK_NET" : "WCFG " + wifi + " " + ssid);
     /* 严格模式（原名新国标 6 秒停充）：设置、正在等车、离强制断开还剩多少毫秒（固件 wb2.c 的 LIVE 行）。
-     * 假桩的车不理方波：等满 6 秒才停下来。 */
+     * 假桩的车不理方波：等满 6.5 秒才停下来。 */
     var left = pile.stopUntil ? pile.stopUntil - Date.now() : 0;
     if (pile.stopUntil && left <= 0) {
       pile.stopUntil = 0;
@@ -193,7 +193,7 @@
         return ["ACK START OK"];
       case "STOP":
         if (pile.state === "CHARGING" && pile.gbStop) {
-          if (!pile.stopUntil) pile.stopUntil = Date.now() + 6000;    /* 再点不重新计时 */
+          if (!pile.stopUntil) pile.stopUntil = Date.now() + 6500;    /* 再点不重新计时 */
         }
         else if (pile.state === "CHARGING") { pile.state = "FINISHED"; pile.stop = "BLE"; }
         return ["ACK STOP OK"];

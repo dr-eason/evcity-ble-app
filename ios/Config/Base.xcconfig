@@ -4,8 +4,8 @@
 // ---- 标识和版本：和 Android 的 AndroidManifest.xml 保持一致 ----
 // 占位的 Bundle ID，上架或做描述文件前换成在 Apple Developer 里登记的那个。
 EVC_BUNDLE_ID = com.evcity.ac06ble
-EVC_VERSION = 3.0.5
-EVC_BUILD = 3005
+EVC_VERSION = 3.0.6
+EVC_BUILD = 3006
 
 // ---- 签名：全部是占位 ----
 // Team ID（10 位字母数字）。留空时只能编模拟器，或者带 CODE_SIGNING_ALLOWED=NO。
