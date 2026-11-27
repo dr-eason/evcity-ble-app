@@ -93,8 +93,8 @@
         <b>{{ t(clock) }}</b>
       </div>
       <div class="pair">
-        <button class="go" @click="send('START')">{{ t('启动') }}</button>
-        <button class="ghost" :disabled="stopBtn.disabled" @click="tapStop">{{ t('停止') }}<template v-if="stopBtn.disabled"> ({{ stopBtn.seconds }} s)</template></button>
+        <button class="go" :disabled="toggleOff.start" @click="tapStart">{{ t('启动') }}</button>
+        <button class="ghost" :disabled="stopBtn.disabled || toggleOff.stop" @click="tapStop">{{ t('停止') }}<template v-if="stopBtn.disabled"> ({{ stopBtn.seconds }} s)</template></button>
       </div>
       <p v-if="stopBtn.disabled" class="note">{{ t('等待车端关闭，请勿重复点击停止') }}</p>
       <div class="linkbox">
@@ -781,6 +781,9 @@ import {
   gbChargingState, liveGbStop, newStopGuard, parseGbStopLine, readGbStop, resetStopGuard, saveGbStop,
   stopLive, stopState, stopTap, stopView,
 } from "./gbstop.js";
+import {
+  TOGGLE_GAP_MS, newToggleGuard, resetToggleGuard, toggleBlocked, toggleNextMs, toggleRelease, toggleTap,
+} from "./charge-toggle-guard.js";
 import { appVersionFull, appVersionLabel, resolveAppVersion } from "./app-version.js";
 import M01App from "./m01/M01App.vue";
 import { TYPE_AC06, TYPE_LABELS, TYPE_M01, TYPE_UNKNOWN, deviceType, needsSwitch, profileFor, rememberType, typeFromStatus } from "./devtype.js";
@@ -2398,11 +2401,42 @@ setInterval(() => {
     stopRefresh(now);
   }
 }, 250);
+/* 启动和停止之间至少隔 1 秒（charge-toggle-guard.js）：点了启动 1 秒内「停止」置灰、点了不算，
+ * 反过来一样。从点下去的那一刻算；桩回“启动未被接受”就马上放开。断开时清掉。 */
+const toggleGuard = newToggleGuard();
+const toggleVer = ref(0);
+let toggleTimer = 0;
+const toggleOff = computed(() => {
+  const now = (toggleVer.value, Date.now());
+  return { start: toggleBlocked(toggleGuard, "START", now), stop: toggleBlocked(toggleGuard, "STOP", now) };
+});
+/* 重新算一次按钮的样子；还有按钮在等，就在它放开的那一刻再来一次。 */
+function toggleRefresh() {
+  clearTimeout(toggleTimer);
+  toggleTimer = 0;
+  toggleVer.value += 1;
+  const left = toggleNextMs(toggleGuard, Date.now());
+  if (left > 0) toggleTimer = setTimeout(toggleRefresh, Math.min(left, TOGGLE_GAP_MS) + 15);
+}
+function resetToggle() {
+  resetToggleGuard(toggleGuard);
+  toggleRefresh();
+}
+onBeforeUnmount(() => clearTimeout(toggleTimer));
+function tapStart() {
+  if (!bridge()) return;
+  if (!toggleTap(toggleGuard, "START", Date.now())) return;
+  toggleRefresh();
+  send("START");
+}
 function tapStop() {
   const now = Date.now();
+  if (!bridge() || toggleBlocked(toggleGuard, "STOP", now)) return;
   if (!stopTap(stopGuard, now, { gbOn: gbStopOn.value, charging: gbChargingState(chargeToken) })) return;
   stopRefresh(now);
   send("STOP");
+  toggleTap(toggleGuard, "STOP", now);
+  toggleRefresh();
 }
 function resetGbStop() {
   gbStopRun += 1;
@@ -3032,6 +3066,7 @@ function resetCharge() {
   gbStopState.value = "idle";
   resetStopGuard(stopGuard);
   chargeToken = "";
+  resetToggle();
   stopRefresh(Date.now());
   wifiSaved.value = "未配置热点";
   plug.value = false;
@@ -3609,6 +3644,11 @@ function applyAck(line) {
   if (line.indexOf("WJOIN") >= 0 && (line.indexOf("FAIL") >= 0 || line.indexOf("BUSY") >= 0)) {
     stopWifiJoin(ackText(line));
     return;
+  }
+  /* 启动没被接受：继电器没有动，不用再挡着「停止」（charge-toggle-guard.js）。 */
+  if (line.indexOf("ACK START REJECTED") === 0) {
+    toggleRelease(toggleGuard, "START");
+    toggleRefresh();
   }
   const text = ackText(line);
   if (!text) return;

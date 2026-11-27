@@ -66,8 +66,8 @@
             <small>{{ item.va }}</small>
             <small v-if="item.bal">{{ t('余额') }} {{ item.bal }}</small>
           </span>
-          <button v-if="item.live" class="port-btn stop" :disabled="portBusyCmd" @click.stop="cardStop(item.port)">{{ t('停止') }}</button>
-          <button v-else class="port-btn" :disabled="portBusyCmd || !item.ready" @click.stop="cardStart(item.port)">{{ t('启动') }}</button>
+          <button v-if="item.live" class="port-btn stop" :disabled="portBusyCmd || toggleOff('STOP', item.port)" @click.stop="cardStop(item.port)">{{ t('停止') }}</button>
+          <button v-else class="port-btn" :disabled="portBusyCmd || !item.ready || toggleOff('START', item.port)" @click.stop="cardStart(item.port)">{{ t('启动') }}</button>
         </div>
       </div>
       <p v-if="!portsSeen" class="note">{{ t('正在读取各路状态') }}</p>
@@ -75,10 +75,10 @@
       <p class="note">{{ t(note, noteVars) }}</p>
       <p v-if="compatShown" class="note" :class="{ warn: compatShown.warn }">{{ t(compatShown) }}</p>
       <div v-if="stopAllAsk" class="pair">
-        <button class="go" @click="confirmStopAll">{{ t('确认全部停止') }}</button>
+        <button class="go" :disabled="portBusyCmd || toggleOff('STOP', 0)" @click="confirmStopAll">{{ t('确认全部停止') }}</button>
         <button @click="stopAllAsk = false">{{ t('取消') }}</button>
       </div>
-      <button v-else class="ghost" :disabled="portBusyCmd" @click="stopAllAsk = true">{{ t('全部停止') }}</button>
+      <button v-else class="ghost" :disabled="portBusyCmd || toggleOff('STOP', 0)" @click="stopAllAsk = true">{{ t('全部停止') }}</button>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
     </section>
 
@@ -98,8 +98,8 @@
         <div><small>{{ t('本次电量') }}</small><strong>{{ portView.kwh }}</strong></div>
       </div>
       <div class="pair">
-        <button class="go" :disabled="portBusyCmd" @click="startPort">{{ t('启动') }}</button>
-        <button class="ghost" :disabled="portBusyCmd" @click="stopPort">{{ t('停止') }}</button>
+        <button class="go" :disabled="portBusyCmd || toggleOff('START', portSel)" @click="startPort">{{ t('启动') }}</button>
+        <button class="ghost" :disabled="portBusyCmd || toggleOff('STOP', portSel)" @click="stopPort">{{ t('停止') }}</button>
       </div>
       <p class="note">{{ t(portNote, portNoteVars) }}</p>
       <button v-if="selLeft > 0" class="go" :disabled="portBusyCmd" @click="selectPort(false)">{{ t('请刷卡，还剩 {s} 秒（点这里取消）', { s: selLeft }) }}</button>
@@ -659,6 +659,7 @@ import { AUTH_LOCK_SECONDS, authDecide, commandName, isOtaCommand, lockLeft, loc
 import { DEFAULT_OVER_V, DEFAULT_UNDER_V, SECTIONS, blankBody, cleanProfileName, ocppUrlOk, profilePorts, profileWantsReboot, readPlan, sameSection, sectionSkip, voltageLimitError, writePlan } from "./profile.js";
 import { PAR_SWITCH_TIMEOUT_MS, parSwitchStep, parSwitchText, runParSwitch } from "./par-switch.js";
 import { APP_VERSION, FW_UNKNOWN, compatNotice, fwGiveUp, fwState, isDowngrade, lackNote, sectionLack, supports } from "./fw-compat.js";
+import { TOGGLE_ALL, TOGGLE_GAP_MS, newToggleGuard, resetToggleGuard, toggleBlocked, toggleMark, toggleNextMs, toggleRelease, toggleTap } from "../charge-toggle-guard.js";
 import { PARALLEL_MODES, PORT_COUNT, PORTSEL_SECONDS, faultLabel, fmtDuration, fmtIsoClock, fmtKwh, fmtMoney, fmtUnix, fmtWatts, orderCollector, orderPayRows, orderReasonLabel, ordersCommand, parallelLabel, parallelPorts, parseFlt, parseOrder, parseOrderSum, parsePar, parseParSet, parsePay, parsePaySet, parsePlim, parsePort, parsePortAck, parsePorts, parsePortsX, parseSys, payCommand, payModelLabel, pickSsid, plimCommand, plimValue, portAckText, portBusy, portStatus, portsSummary, sameSsid, selectLeft, startLabel, stopLabel } from "./ports.js";
 
 /* 合并进 AC06 App 后：语言由外壳（App.vue）统一存在 ac06-lang 里，这里从 props 拿，
@@ -1343,6 +1344,7 @@ onBeforeUnmount(() => {
   linkReady.value = false;
   clearInterval(tickTimer);
   clearInterval(otaLeaseTimer);
+  clearTimeout(toggleTimer);
   menuPull++;
   otaRun++;
   profileRunId++;
@@ -2369,16 +2371,49 @@ function openPort(port) {
   pollPort();
   if (!plimKnown.value) readPlim();
 }
-/* START / STOP / PORTSEL：发一条，等它的 "ACK <命令>\t<端口>\t<结果>"。没等到返回 null。 */
+/* 启动和停止之间至少隔 1 秒（../charge-toggle-guard.js），每一路各算各的：点了某一路的启动，
+ * 1 秒内这一路的「停止」置灰、点了不算，反过来一样；别的路不受影响。「全部停止」是端口 0：
+ * 算每一路都停了一次，任何一路刚启动不到 1 秒时它也置灰。从点下去的那一刻算；桩没应答或者
+ * 没接受（不是 OK）就马上放开。断开、换设备时清掉。 */
+const toggleGuard = newToggleGuard();
+const toggleVer = ref(0);
+let toggleTimer = 0;
+function toggleOff(cmd, port) {
+  return (toggleVer.value, toggleBlocked(toggleGuard, cmd, Date.now(), port));
+}
+/* 重新算一次按钮的样子；还有按钮在等，就在它放开的那一刻再来一次。 */
+function toggleRefresh() {
+  clearTimeout(toggleTimer);
+  toggleTimer = 0;
+  toggleVer.value += 1;
+  const left = toggleNextMs(toggleGuard, Date.now());
+  if (left > 0) toggleTimer = setTimeout(toggleRefresh, Math.min(left, TOGGLE_GAP_MS) + 15);
+}
+function resetToggle() {
+  resetToggleGuard(toggleGuard);
+  toggleRefresh();
+}
+/* START / STOP / PORTSEL：发一条，等它的 "ACK <命令>\t<端口>\t<结果>"。没等到返回 null；
+ * 没有发（上一条还没回，或者启停间隔不到 1 秒）返回 undefined。 */
 async function portCommand(cmd, port) {
   if (portBusyCmd.value) return undefined;
+  const toggles = cmd === "START" || cmd === "STOP";
+  if (toggles) {
+    if (!toggleTap(toggleGuard, cmd, Date.now(), port)) return undefined;
+    toggleRefresh();
+  }
   portBusyCmd.value = true;
   const line = await ask(cmd + "\t" + port, (text) => {
     const ack = parsePortAck(text);
     return ack !== null && ack.cmd === cmd;
   }, 3000);
   portBusyCmd.value = false;
-  return line === null ? null : parsePortAck(line);
+  const ack = line === null ? null : parsePortAck(line);
+  if (toggles && (!ack || ack.result !== "OK")) {
+    toggleRelease(toggleGuard, cmd, port);
+    toggleRefresh();
+  }
+  return ack;
 }
 /* 桩先回 ACK START/STOP，状态行要等下一秒。先把这一格改掉，避免界面停在旧状态。
  * 只改指定的一路。全部停止不能把空闲的格子也画成 F，否则会一直显示「结束中」。 */
@@ -2606,6 +2641,9 @@ async function confirmPar() {
   if (!can("parallel")) return;
   /* 整个切换最多 30 秒（par-switch.js 自己算），看门狗放在它后面兜底。 */
   if (!saveBtns.begin("par", PAR_SWITCH_TIMEOUT_MS + 15000)) return;
+  /* 切换的第一步是全部停止（STOP⇥0）：记一下，1 秒内各路的「启动」不能点。 */
+  toggleMark(toggleGuard, "STOP", Date.now(), TOGGLE_ALL);
+  toggleRefresh();
   const mode = parPick.value;
   const token = ++parRun;
   const addr = linkAddr.value;
@@ -2890,6 +2928,7 @@ function resetCharge() {
   portInfo.value = null;
   portNote.value = "";
   portBusyCmd.value = false;
+  resetToggle();
   selPort.value = 0;
   selUntil.value = 0;
   plimKnown.value = false;

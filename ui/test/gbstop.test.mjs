@@ -287,8 +287,9 @@ test("App.vue：首页停止按钮、设置页、菜单入口；用到的字符�
   const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
   const template = vue.slice(0, vue.indexOf("<script"));
   const script = vue.slice(vue.indexOf("<script"));
-  /* 停止按钮：置灰、倒计时、点了走 tapStop；模板里不再直接 send('STOP')。 */
-  assert.match(template, /<button class="ghost" :disabled="stopBtn\.disabled" @click="tapStop">\{\{ t\('停止'\) \}\}<template v-if="stopBtn\.disabled"> \(\{\{ stopBtn\.seconds \}\} s\)<\/template><\/button>/);
+  /* 停止按钮：置灰、倒计时、点了走 tapStop；模板里不再直接 send('STOP')。
+   * toggleOff.stop 是 3.0.8 的启停最小间隔（charge-toggle-guard.test.mjs），倒计时和提示行只跟 stopBtn。 */
+  assert.match(template, /<button class="ghost" :disabled="stopBtn\.disabled \|\| toggleOff\.stop" @click="tapStop">\{\{ t\('停止'\) \}\}<template v-if="stopBtn\.disabled"> \(\{\{ stopBtn\.seconds \}\} s\)<\/template><\/button>/);
   assert.ok(!template.includes("send('STOP')"));
   assert.match(template, /<p v-if="stopBtn\.disabled" class="note">\{\{ t\('等待车端关闭，请勿重复点击停止'\) \}\}<\/p>/);
   /* STOP 只在 tapStop 里发，而且先问 stopTap。 */
