@@ -135,8 +135,10 @@ jobs:
             echo "::error::UIDeviceFamily 是 $family，应当是 [1]（只支持 iPhone）。检查 project.yml 的 TARGETED_DEVICE_FAMILY。"
             exit 1
           fi
-          if plutil -p "$plist" | grep -i '~ipad'; then
-            echo "::error::Info.plist 里还有 iPad 专用的键"
+          # 只查 iPad 专用的方向键。CFBundleIcons~ipad 是 Xcode 的图标编译器（actool）自己加进去的，
+          # 只支持 iPhone 的 App 也会有，不影响上架（设备类型只看 UIDeviceFamily），不算错。
+          if plutil -p "$plist" | grep -F 'UISupportedInterfaceOrientations~ipad'; then
+            echo "::error::Info.plist 里还有 UISupportedInterfaceOrientations~ipad（iPad 专用的屏幕方向）。检查 App/Resources/Info.plist。"
             exit 1
           fi
 
@@ -347,8 +349,10 @@ jobs:
                 echo "::error::$(basename "$ipa") 的 UIDeviceFamily 是 $family，应当是 [1]（只支持 iPhone）。检查 project.yml 的 TARGETED_DEVICE_FAMILY。"
                 exit 1
               fi
-              if plutil -p "$plist" | grep -i '~ipad'; then
-                echo "::error::$(basename "$ipa") 的 Info.plist 里还有 iPad 专用的键"
+              # 只查 iPad 专用的方向键。CFBundleIcons~ipad 是 Xcode 的图标编译器（actool）自己加进去的，
+              # 只支持 iPhone 的 App 也会有，不影响上架（设备类型只看 UIDeviceFamily），不算错。
+              if plutil -p "$plist" | grep -F 'UISupportedInterfaceOrientations~ipad'; then
+                echo "::error::$(basename "$ipa") 的 Info.plist 里还有 UISupportedInterfaceOrientations~ipad（iPad 专用的屏幕方向）。检查 App/Resources/Info.plist。"
                 exit 1
               fi
             done
