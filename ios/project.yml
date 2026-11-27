@@ -41,7 +41,8 @@ targets:
         INFOPLIST_FILE: App/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # 只给 iPhone（1）。不要加 2（iPad）：加了 App Store 会要 iPad 截图。CI 会核对包里的 UIDeviceFamily 只有 1。
+        TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
         # EVC_MOCK_BLE=1 时给 Swift 加上 EVC_MOCK_BLE 这个条件编译符号，见 Config/Base.xcconfig。
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) $(EVC_MOCK_FLAG_$(EVC_MOCK_BLE))

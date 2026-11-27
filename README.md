@@ -15,7 +15,7 @@ not edit it here.
 | 目录 | 内容 |
 |---|---|
 | `ui/` | App 的界面（Vue 3 + Vite）。Android 和 iOS 用同一份。 |
-| `ios/` | iOS 工程（Swift，WKWebView + CoreBluetooth，XcodeGen）。说明见 `ios/说明.md`。 |
+| `ios/` | iOS 工程（Swift，WKWebView + CoreBluetooth，XcodeGen）。只支持 iPhone，不支持 iPad。说明见 `ios/说明.md`。 |
 | `.github/workflows/ios.yml` | iOS 的构建工作流。 |
 
 ## 构建

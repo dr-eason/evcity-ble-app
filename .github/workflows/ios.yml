@@ -123,6 +123,23 @@ jobs:
             EVC_MOCK_BLE=1 \
             2>&1 | tee build/xcodebuild-simulator.log
 
+      - name: Check the simulator app is iPhone only (UIDeviceFamily = [1])
+        working-directory: ios
+        run: |
+          # 只支持 iPhone：UIDeviceFamily 必须正好是 [1]。带 2（iPad）时 App Store 会要 iPad 截图。
+          plist="build/DerivedData/Build/Products/Debug-iphonesimulator/EVCITYAC.app/Info.plist"
+          test -f "$plist"
+          family="$(plutil -extract UIDeviceFamily json -o - "$plist" | tr -d '[:space:]')"
+          echo "UIDeviceFamily = $family"
+          if [ "$family" != "[1]" ]; then
+            echo "::error::UIDeviceFamily 是 $family，应当是 [1]（只支持 iPhone）。检查 project.yml 的 TARGETED_DEVICE_FAMILY。"
+            exit 1
+          fi
+          if plutil -p "$plist" | grep -i '~ipad'; then
+            echo "::error::Info.plist 里还有 iPad 专用的键"
+            exit 1
+          fi
+
       - name: Zip the simulator app
         working-directory: ios
         run: |
@@ -306,6 +323,39 @@ jobs:
             -exportPath build/ipa \
             -exportOptionsPlist "$plist"
           ls -l build/ipa
+
+      - name: Check the ${{ matrix.flavor }} ipa is iPhone only (UIDeviceFamily = [1])
+        working-directory: ios
+        run: |
+          # 测试包（development）和发布包（ad-hoc）都查：解开导出的 ipa，读 Payload/*.app/Info.plist。
+          # UIDeviceFamily 必须正好是 [1]（只支持 iPhone），不是就失败，不上传。
+          set -eu
+          check="$RUNNER_TEMP/ipa-family-check"
+          rm -rf "$check"
+          mkdir -p "$check"
+          count=0
+          for ipa in build/ipa/*.ipa; do
+            test -f "$ipa"
+            dir="$check/$count"
+            mkdir -p "$dir"
+            unzip -q "$ipa" 'Payload/*.app/Info.plist' -d "$dir"
+            for plist in "$dir"/Payload/*.app/Info.plist; do
+              test -f "$plist"
+              family="$(plutil -extract UIDeviceFamily json -o - "$plist" | tr -d '[:space:]')"
+              echo "$IPA_FLAVOR $(basename "$ipa"): UIDeviceFamily = $family"
+              if [ "$family" != "[1]" ]; then
+                echo "::error::$(basename "$ipa") 的 UIDeviceFamily 是 $family，应当是 [1]（只支持 iPhone）。检查 project.yml 的 TARGETED_DEVICE_FAMILY。"
+                exit 1
+              fi
+              if plutil -p "$plist" | grep -i '~ipad'; then
+                echo "::error::$(basename "$ipa") 的 Info.plist 里还有 iPad 专用的键"
+                exit 1
+              fi
+            done
+            count=$((count + 1))
+          done
+          test "$count" -ge 1
+          rm -rf "$check"
 
       - name: Upload ipa
         uses: actions/upload-artifact@v4
