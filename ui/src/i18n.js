@@ -12,6 +12,9 @@ import { phasePacks } from "./packs-phase.js";
 import { gbStopPacks } from "./packs-gbstop.js";
 import { mergePacks } from "./packs-merge.js";
 import { saveBtnPacks } from "./packs-savebtn.js";
+import { pinPacks } from "./packs-pin.js";
+import { updatePacks } from "./packs-update.js";
+import { cloudPacks } from "./packs-cloud.js";
 
 const en = {
   "返回": "Back",
@@ -854,10 +857,23 @@ Object.keys(phasePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs
 Object.keys(gbStopPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], gbStopPacks[lang]); });
 /* 合并 AC06 + M01：扫描页上的两种桩、认类型、换模块、固件和一键配置不能混用：packs-merge.js。 */
 Object.keys(mergePacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], mergePacks[lang]); });
+/* 修改密码 / 超级密码和数字键盘：新字符串在 packs-pin.js。 */
+Object.keys(pinPacks).forEach((lang) => { if (packs[lang]) Object.assign(packs[lang], pinPacks[lang]); });
 /* 设置页「保存」按钮上的结果和短原因（save-btn.js）：packs-savebtn.js。表里已经有的句子不覆盖。 */
 Object.keys(saveBtnPacks).forEach((lang) => {
   if (!packs[lang]) return;
   Object.keys(saveBtnPacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = saveBtnPacks[lang][key]; });
+});
+/* 固件升级页的「云端固件」（cloud-fw.js、CloudFw.vue）：packs-cloud.js。表里已经有的句子不覆盖。 */
+Object.keys(cloudPacks).forEach((lang) => {
+  if (!packs[lang]) return;
+  Object.keys(cloudPacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = cloudPacks[lang][key]; });
+});
+
+/* App 自己的更新（app-update.js、UpdateDialog.vue）：packs-update.js。表里已经有的句子不覆盖。 */
+Object.keys(updatePacks).forEach((lang) => {
+  if (!packs[lang]) return;
+  Object.keys(updatePacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = updatePacks[lang][key]; });
 });
 
 export function translate(lang, text, vars) {

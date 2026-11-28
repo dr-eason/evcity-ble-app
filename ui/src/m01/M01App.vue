@@ -581,7 +581,9 @@
       <p class="note">{{ t('选择本机上的应用固件。发送前 10 路都会先停充，并在升级过程中暂停 WiFi 和 OCPP。整包 CRC 会先发给充电桩，收完再核对。重启后原来的配置还在。') }}</p>
       <p class="note">{{ t('只能选摩托车充电桩 M01 的固件（文件里有 M01VER= 标记）') }}</p>
       <input ref="firmwareInput" class="file" type="file" accept="*/*" @change="onFirmwareFile">
-      <button class="ghost" @click="pickFirmware">{{ t('选择固件文件') }}</button>
+      <CloudFw kind="m01" :disabled="otaBusy" :t="t" @loaded="onCloudFirmware">
+        <button class="ghost" @click="pickFirmware">{{ t('选择固件文件') }}</button>
+      </CloudFw>
       <div v-if="otaName" class="card">
         <strong>{{ otaName }}</strong>
         <p class="note">{{ t('大小') }} {{ otaSize }} {{ t('字节') }}</p>
@@ -639,6 +641,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { SAVE_IDLE, SAVE_SILENT, SAVE_TEXT, createSaveBtns, saveClass, saveLabel, saveLocked } from "./save-btn.js";
 import PrivacyPolicy from "../PrivacyPolicy.vue";
+import CloudFw from "../CloudFw.vue";
 import { languages } from "../i18n.js";
 import { firmwareTypeError } from "../ota-guard.js";
 import { m01Translate } from "./t.js";
@@ -3608,8 +3611,18 @@ function onFirmwareFile(event) {
   event.target.value = "";
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
-    const raw = new Uint8Array(reader.result);
+  reader.onload = () => loadFirmwareBytes(file.name, new Uint8Array(reader.result));
+  reader.readAsArrayBuffer(file);
+}
+/* 云端固件（CloudFw.vue）下载、校验好的字节：和本机选的文件走同一条路。升级进行中不换文件。 */
+function onCloudFirmware(got) {
+  if (otaBusy.value || !got || !got.bytes) return;
+  loadFirmwareBytes(got.name, got.bytes);
+}
+/* 选好的固件（本机文件或云端下载）：大小、类型、分区检查，通过后等「开始升级」。 */
+function loadFirmwareBytes(fileName, raw) {
+  {
+    const file = { name: fileName };
     const size = (raw.length + 3) & ~3;
     if (size < 8 || size > 200 * 1024) {
       otaImage = null;
@@ -3659,8 +3672,7 @@ function onFirmwareFile(event) {
     wifiQuiet.value = false;
     ocppQuiet.value = false;
     otaNote.value = "发送过程中充电桩亮白灯快闪";
-  };
-  reader.readAsArrayBuffer(file);
+  }
 }
 function acceptDowngrade() {
   downgradeAccepted = true;

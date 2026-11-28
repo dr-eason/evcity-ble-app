@@ -87,6 +87,9 @@ public enum BridgeCall: Equatable {
     case exportFile(name: String, text: String)
     /// 合并后：这次连的是哪种桩（选行首表）。认不出的按 AC06。
     case setProfile(ChargerKind)
+    /// 云端固件（AC-33）：让原生 GET 一个地址。id 是页面自己编的，回调时原样带回；kind 是 "text" 或 "bin"。
+    /// 地址合不合格在处理时用 CloudRules 查（不合格要回页面一个 "blocked"，所以这里不拦）。
+    case cloudGet(id: String, url: String, kind: String)
 
     /// 一条命令能不能发：空的、带换行的不发。和 Java Bridge.send 一样。
     public static func sendable(_ text: String) -> Bool {
@@ -157,6 +160,11 @@ public enum BridgeCall: Equatable {
                 return nil
             }
             return .exportFile(name: ExportRules.fileName(text(0) ?? ""), text: content)
+        case "cloudGet":
+            guard let id = text(0), let url = text(1), let kind = text(2) else {
+                return nil
+            }
+            return .cloudGet(id: id, url: url, kind: kind)
         default:
             return nil
         }
@@ -190,6 +198,58 @@ public enum ExportRules {
             clean += ".json"
         }
         return clean
+    }
+}
+
+/// 云端固件（AC-33）的联网限制：只能 GET 固件服务器 /files/ 下面的东西，免得这个桥变成任意联网接口。
+/// 和 Android 的 MainActivity.cloudUrl 同一套规则。
+public enum CloudRules {
+    public static let host = "8.210.219.113"
+    public static let port = 8088
+    public static let pathPrefix = "/files/"
+    /// 响应体上限（text 和 bin 一样），超过就中止，按 "too large" 回页面。
+    public static let maxBytes = 1024 * 1024
+    /// 没连上（没收到响应头）等多久、收数据中途停多久算超时，秒。
+    public static let connectTimeout: TimeInterval = 10
+    public static let readTimeout: TimeInterval = 20
+
+    /// 合格就返回可以直接请求的 URL，否则 nil。
+    /// 要求：http（小写开头，和 Android 一样）、主机和端口对得上、不带用户名密码、路径以 /files/ 开头、路径里（解码前后）都没有 ".."、没有反斜杠。
+    public static func url(_ text: String) -> URL? {
+        if text.isEmpty || text.utf8.count > 2048 || !text.hasPrefix("http://") || text.contains("\\") {
+            return nil
+        }
+        for scalar in text.unicodeScalars where scalar.value <= 0x20 || scalar.value == 0x7F {
+            return nil
+        }
+        guard let parts = URLComponents(string: text),
+              parts.scheme == "http",
+              parts.host == host,
+              parts.port == port,
+              parts.user == nil,
+              parts.password == nil,
+              parts.percentEncodedPath.hasPrefix(pathPrefix),
+              !parts.percentEncodedPath.contains(".."),
+              !parts.path.contains(".."),
+              !parts.path.contains("\\") else {
+            return nil
+        }
+        return parts.url
+    }
+
+    public static func allowed(url text: String) -> Bool {
+        return url(text) != nil
+    }
+
+    /// 回页面的那两句 JavaScript。页面没注册 window.__evcCloud（旧界面）时什么也不做。
+    public static func doneScript(id: String, status: Int, base64: String, error: String) -> String {
+        return "window.__evcCloud&&window.__evcCloud.done&&window.__evcCloud.done.apply(null,"
+            + JSONText.encode([id, status, base64, error] as [Any]) + ")"
+    }
+
+    public static func progScript(id: String, done: Int, total: Int) -> String {
+        return "window.__evcCloud&&window.__evcCloud.prog&&window.__evcCloud.prog.apply(null,"
+            + JSONText.encode([id, done, total] as [Any]) + ")"
     }
 }
 

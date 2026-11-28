@@ -59,6 +59,9 @@
         <button class="go" @click="scan">{{ scanning ? t('停止扫描') : t('扫描充电桩') }}</button>
         <button class="ghost" @click="restartApp">{{ t('没搜到，关闭重试') }}</button>
         <button class="privacy-link" @click="openPrivacy('scan')">{{ t('隐私协议') }}</button>
+        <!-- App 版本（点一下检查更新，见 app-update.js）和一行不显眼的出品方。出品方是品牌名，不翻译。 -->
+        <p class="appver scan-ver" role="button" tabindex="0" :aria-label="t('检查更新')" @click="checkAppUpdate" @keydown.enter="checkAppUpdate">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi></p>
+        <p class="powerby" dir="ltr">Power by EVCITY &amp;&amp; GCSS</p>
       </div>
     </section>
 
@@ -109,20 +112,23 @@
       </button>
       <p class="note">{{ t(note) }}</p>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
-      <p class="appver">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi></p>
+      <p class="appver" @click="checkAppUpdate">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi></p>
     </section>
 
     <section v-else-if="page === 'gate'" class="body">
       <p class="note">{{ t('连接这台充电桩需要屏幕上的管理员密码。通过一次后，这台手机会记住，下次连接自动核对。') }}</p>
-      <input v-model="gateInput" class="field" type="password" inputmode="numeric" maxlength="6" :placeholder="t('6 位数字')">
-      <label class="row">
+      <!-- 6 位数字不用系统输入法：这一页没有任何输入框，方格只是显示，键盘是自己画的（PinPad.vue）。
+           满 6 位自动核对；「保存密码」也是按钮，不是 checkbox。 -->
+      <PinPad :value="gateInput" :clear-label="t('清空')" :back-label="t('退格')"
+              :cells-label="t('已输入 {n} 位，共 6 位', { n: gateInput.length })" @key="gatePadKey" />
+      <p class="note">{{ gateNoteShown }}</p>
+      <button type="button" class="row check" role="switch" :aria-checked="gateSave ? 'true' : 'false'" @click="gateSave = !gateSave">
         <span>
           <strong>{{ t('保存密码') }}</strong>
           <small>{{ t('保存在这台手机上，下次自动连接') }}</small>
         </span>
-        <input v-model="gateSave" type="checkbox">
-      </label>
-      <p class="note">{{ gateNoteShown }}</p>
+        <i class="tick" :class="{ on: gateSave }" aria-hidden="true"></i>
+      </button>
       <button class="go" :disabled="gateLockLeft > 0" @click="submitGate">{{ gateLockLeft > 0 ? t('已锁定（{s} 秒）', { s: gateLockLeft }) : t('连接') }}</button>
     </section>
 
@@ -240,11 +246,15 @@
           <span><strong>{{ t('管理员密码') }}</strong><small>{{ t('连接时核对屏幕上的 6 位密码') }}</small></span>
           <em>{{ gateRemembered ? t('已记住') : t('未记住') }}</em>
         </button>
+        <button class="card device" @click="openPinMenu">
+          <span><strong>{{ t('修改密码') }}</strong><small>{{ t('修改管理员密码或超级密码') }}</small></span>
+          <em>›</em>
+        </button>
         <button class="card device" @click="openPrivacy('menu')">
           <span><strong>{{ t('隐私协议') }}</strong></span>
           <em>›</em>
         </button>
-        <div class="card device">
+        <div class="card device" role="button" tabindex="0" @click="checkAppUpdate" @keydown.enter="checkAppUpdate">
           <span><strong>{{ t('App 版本') }}</strong></span>
           <em class="ver">{{ appVersionLong }}</em>
         </div>
@@ -256,6 +266,41 @@
       <p class="note">{{ gateRemembered ? t('这台手机已记住这台充电桩的管理员密码，下次连接自动核对。') : t('这台手机没有记住这台充电桩的管理员密码，下次连接要输入屏幕上的密码。') }}</p>
       <p v-if="authInfoNote" class="note">{{ t(authInfoNote) }}</p>
       <button class="ghost" :disabled="!gateRemembered" @click="clearRememberedGate">{{ t('清除记住的密码') }}</button>
+    </section>
+
+    <!-- 修改密码（PINSET / SUPERGET / SUPERSET，规则在 pin-pad.js）。进来先问一次 SUPERGET：桩回了
+         才能改；不回就是固件太旧（或者这一下没收到），给一句提示，不卡在这里。界面上不显示任何密码。 -->
+    <section v-else-if="page === 'pinmenu'" class="body">
+      <p v-if="pinMenuNote" class="note" :class="{ warn: pinState === 'old' || pinState === 'silent' }">{{ t(pinMenuNote, pinMenuVars) }}</p>
+      <button class="card device" :disabled="pinState !== 'ok'" @click="openPinEdit('user')">
+        <span><strong>{{ t('修改管理员密码') }}</strong><small>{{ t('屏幕和蓝牙连接共用的 6 位密码') }}</small></span>
+        <em>›</em>
+      </button>
+      <button class="card device" :disabled="pinState !== 'ok'" @click="openPinEdit('super')">
+        <span><strong>{{ t('修改超级密码') }}</strong><small>{{ t('忘记管理员密码时，可以用超级密码连接蓝牙并重设。') }}</small></span>
+        <em>{{ pinState === 'ok' ? (pinSuperCustom ? t('已修改') : t('默认密码')) : '›' }}</em>
+      </button>
+      <p v-if="pinState === 'ok' && !pinSuperCustom" class="note warn">{{ t('超级密码默认由设备编号推算，建议修改。') }}</p>
+      <button v-if="pinState === 'silent'" class="ghost" @click="probePin">{{ t('重试') }}</button>
+    </section>
+
+    <!-- 输两遍新密码：没有输入框，方格和键盘同密码页。改超级密码在发命令之前先弹警告，点了
+         「确认修改」才发。 -->
+    <section v-else-if="page === 'pinedit'" class="body">
+      <p class="note">{{ pinFlow.pad.step === 0 ? t('请输入新的 6 位密码') : t('请再输入一次') }}</p>
+      <PinPad :value="pinShown" :active="!pinReady" :disabled="pinFlow.stage !== 'enter'" :clear-label="t('清空')" :back-label="t('退格')"
+              :cells-label="t('已输入 {n} 位，共 6 位', { n: pinShown.length })" @key="pinPadKey" />
+      <p class="note" :class="{ warn: pinFlow.stage === 'enter' && !!pinFlow.note }">{{ pinFlow.note ? t(pinFlow.note, pinFlow.noteVars) : '' }}</p>
+      <button class="go" :disabled="!pinReady || pinFlow.stage !== 'enter'" @click="pinAct({ t: 'confirm' })">{{ t('确认修改') }}</button>
+      <div v-if="pinFlow.stage === 'warn'" class="pin-warn" role="alertdialog" aria-modal="true">
+        <div class="pin-warn-box">
+          <p class="pin-warn-text">{{ t('忘记密码后将无法重置') }}</p>
+          <div class="pair">
+            <button type="button" @click="pinAct({ t: 'warn-cancel' })">{{ t('取消') }}</button>
+            <button type="button" class="go" @click="pinAct({ t: 'warn-ok' })">{{ t('确认修改') }}</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section v-else-if="page === 'profiles'" class="body">
@@ -696,7 +741,9 @@
     <section v-else-if="page === 'ota'" class="body">
       <p class="note">{{ t('选择本机上的应用固件。发送前会先停充电，并在升级过程中暂停 WiFi 和 OCPP。整包 CRC 会先发给充电桩，收完再核对。重启后原来的配置还在。') }}</p>
       <input ref="firmwareInput" class="file" type="file" accept="*/*" @change="onFirmwareFile">
-      <button class="ghost" @click="pickFirmware">{{ t('选择固件文件') }}</button>
+      <CloudFw kind="ac06" :disabled="otaBusy" :t="t" @loaded="onCloudFirmware">
+        <button class="ghost" @click="pickFirmware">{{ t('选择固件文件') }}</button>
+      </CloudFw>
       <div v-if="otaName" class="card">
         <strong>{{ otaName }}</strong>
         <p class="note">{{ t('大小') }} {{ otaSize }} {{ t('字节') }}</p>
@@ -749,11 +796,17 @@
       </button>
     </nav>
   </main>
+  <!-- App 自己的更新：轻提示和弹窗。放在最外层，AC06 和 M01 的页面上都能出来。 -->
+  <UpdateDialog ref="updRef" :t="t" />
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import PrivacyPolicy from "./PrivacyPolicy.vue";
+import PinPad from "./PinPad.vue";
+import UpdateDialog from "./UpdateDialog.vue";
+import CloudFw from "./CloudFw.vue";
+import { flowNew, flowStep, isPinCommand, keyFromEvent, padReady, padShown, padValue, parsePinLine, pinChangeFwOk, pinEdit, rememberAfterPinset, rememberAfterSuperset, silentNote } from "./pin-pad.js";
 import { languageFromTag, languages, translate } from "./i18n.js";
 import { SAVE_IDLE, SAVE_TEXT, createSaveBtns, saveClass, saveLabel, saveLocked } from "./save-btn.js";
 import { OTA_CHUNK, otaWindowFor, parseDataAck, sendOtaChunks } from "./ota-window.js";
@@ -1033,6 +1086,8 @@ const pageTitle = computed(() => {
   if (page.value === "qr") return "屏幕二维码";
   if (page.value === "ocfw") return "OCPP上报版本号";
   if (page.value === "gate") return "管理员密码";
+  if (page.value === "pinmenu") return "修改密码";
+  if (page.value === "pinedit") return pinFlow.value.kind === "super" ? "修改超级密码" : "修改管理员密码";
   if (page.value === "privacy") return "隐私协议";
   if (page.value === "lang") return "语言";
   if (page.value === "sched") return "预约充电";
@@ -1414,6 +1469,8 @@ function applyAuthLine(line) {
     }
     /* 升级流程在等自己的应答：让它看到这一行，按发送失败处理。 */
     if (isOtaCommand(step.cmd) && typeof otaWait === "function") otaWait(line);
+    /* 改密码在等自己的应答：这一次没改成（PINSET / SUPERSET 不补发，见 auth.js 的 resendable）。 */
+    if (isPinCommand(step.cmd) && typeof pinWait === "function") pinWait(line);
     return true;
   }
   if (step.action === "ask") {
@@ -1492,6 +1549,15 @@ function back() {
     page.value = "scan";
   }
   else if (page.value === "cardedit") page.value = "cards";
+  else if (page.value === "pinedit") {
+    /* 命令已经发出去、还没等到应答：不走开，免得桩改成了而手机上记住的还是旧的。最多等 5 秒。 */
+    if (pinFlow.value.stage === "sending") return;
+    if (pinFlow.value.stage === "warn") pinAct({ t: "warn-cancel" });
+    else {
+      resetPin();
+      page.value = "pinmenu";
+    }
+  }
   else if (page.value === "ota") {
     otaRun++;
     stopOtaClock();
@@ -1571,6 +1637,155 @@ function submitGate() {
   if (gateState.value === "checking") return;
   bridge().connect(linkAddr.value);
 }
+/* 密码页的数字键盘（PinPad.vue）：gateInput 还是那一串数字，只是不再由输入框来改。
+ * 从不满 6 位输到满 6 位的那一下自动核对；锁定期间 submitGate 自己不发。 */
+function gatePadKey(key) {
+  if (page.value !== "gate") return;
+  const before = String(gateInput.value || "");
+  const next = pinEdit(before, key);
+  gateInput.value = next;
+  if (next.length === 6 && before.length < 6) submitGate();
+}
+/* ---- 修改密码 / 超级密码（pin-pad.js） ----
+ *   pinState         idle / reading / ok（桩回了 SUPERGET，可以改）/ old（不回，固件太旧）/
+ *                    silent（不回，但固件版本够：多半是这一下没收到，可以重试）
+ *   pinSuperCustom   桩说超级密码已经改过（不是默认值）
+ *   pinFlow          输两遍、警告、等应答的流程（flowNew / flowStep）
+ * 新密码只在 pinFlow 里，改完（或者走开）就清掉；不进 lastSent，不显示，不写日志。 */
+const pinState = ref("idle");
+const pinSuperCustom = ref(false);
+const pinMenuNote = ref("");
+const pinMenuVars = ref(null);
+const pinFlow = ref(flowNew("user"));
+const pinShown = computed(() => padShown(pinFlow.value.pad));
+const pinReady = computed(() => padReady(pinFlow.value.pad));
+let pinWait = null;
+let pinRun = 0;
+function askPin(command, accept, ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (pinWait === finish) pinWait = null;
+      resolve(null);
+    }, ms);
+    function finish(line) {
+      if (!accept(line)) return false;
+      clearTimeout(timer);
+      pinWait = null;
+      resolve(line);
+      return true;
+    }
+    pinWait = finish;
+    send(command);
+  });
+}
+function resetPin() {
+  pinRun += 1;
+  pinWait = null;
+  pinFlow.value = flowNew("user");
+}
+function openPinMenu() {
+  menuPull++;
+  resetPin();
+  page.value = "pinmenu";
+  probePin();
+}
+async function probePin() {
+  const token = ++pinRun;
+  const alive = () => token === pinRun && linkReady.value && page.value === "pinmenu";
+  const isSuper = (line) => { const got = parsePinLine(line); return got !== null && got.kind === "super"; };
+  pinState.value = "reading";
+  pinMenuNote.value = "正在读取";
+  pinMenuVars.value = null;
+  let got = null;
+  for (let attempt = 0; attempt < 2 && got === null; attempt++) {
+    got = parsePinLine(await askPin("SUPERGET", isSuper, 2000));
+    if (!alive()) return;
+  }
+  if (got && got.custom !== null) {
+    pinSuperCustom.value = got.custom;
+    pinState.value = "ok";
+    pinMenuNote.value = "";
+    return;
+  }
+  /* 桩回了 AUTH / BUSY：固件是认识这条命令的，只是这一下没办成。 */
+  const fwOk = got ? true : pinChangeFwOk(fw.value);
+  const silent = silentNote(fwOk);
+  pinState.value = fwOk === true ? "silent" : "old";
+  pinMenuNote.value = silent.text;
+  pinMenuVars.value = silent.vars;
+}
+function openPinEdit(kind) {
+  if (pinState.value !== "ok") return;
+  resetPin();
+  pinFlow.value = flowNew(kind);
+  page.value = "pinedit";
+}
+function pinPadKey(key) {
+  pinAct({ t: "key", key });
+}
+function pinAct(action) {
+  const out = flowStep(pinFlow.value, action);
+  pinFlow.value = out.flow;
+  if (out.send) pinSubmit(out.send);
+}
+async function pinSubmit(command) {
+  const token = ++pinRun;
+  const kind = pinFlow.value.kind;
+  const pin = padValue(pinFlow.value.pad);
+  const want = kind === "super" ? "superset" : "pinset";
+  const mine = (line) => { const got = parsePinLine(line); return got !== null && got.kind === want; };
+  const reply = parsePinLine(await askPin(command, mine, 5000));
+  if (token !== pinRun || !linkReady.value || page.value !== "pinedit") return;
+  if (!reply) {
+    pinAct({ t: "timeout", fwOk: pinChangeFwOk(fw.value) });
+    return;
+  }
+  pinAct({ t: "reply", reply });
+  if (reply.ok) pinDone(kind, pin);
+}
+/* 改成了：这条连接不用重新登录。手机上记住的密码按 pin-pad.js 的规则跟着换，然后回到
+ * 「修改密码」那一页，新密码从流程里清掉。 */
+function pinDone(kind, pin) {
+  const have = { saved: savedGate(), session: gatePass.value };
+  const next = kind === "super"
+    ? rememberAfterSuperset(have, pin, linkItem ? linkItem.name : "", pinSuperCustom.value)
+    : rememberAfterPinset(have, pin);
+  if (next.saved !== have.saved && pinOk(next.saved)) rememberGate(next.saved);
+  gatePass.value = next.session;
+  if (kind === "super") pinSuperCustom.value = true;
+  gateRemembered.value = /^\d{6}$/.test(savedGate());
+  pinMenuNote.value = pinFlow.value.note;
+  pinMenuVars.value = null;
+  resetPin();
+  page.value = "pinmenu";
+}
+/* 外接键盘（蓝牙键盘、平板的实体键盘）：密码页和改密码页上数字键、退格、回车照样能用。
+ * 这两页没有输入框，按键是从 document 上收的，不会因此调出系统键盘。 */
+function blurTyping() {
+  const el = document.activeElement;
+  if (el && typingTarget(el) && typeof el.blur === "function") el.blur();
+}
+function onPinKeydown(event) {
+  if (mod.value === "m01") return;
+  if (page.value !== "gate" && page.value !== "pinedit") return;
+  if (typingTarget(event.target)) return;
+  const key = keyFromEvent(event);
+  if (!key) return;
+  /* 焦点要是停在键盘的某个按钮上，回车本来会再点它一次：拦掉。 */
+  event.preventDefault();
+  if (page.value === "gate") {
+    if (key === "enter") submitGate();
+    else gatePadKey(key);
+    return;
+  }
+  /* 回车只当“确认修改”用；警告框必须用手点，不让回车一路按过去。 */
+  if (key === "enter") {
+    if (pinFlow.value.stage === "enter") pinAct({ t: "confirm" });
+    return;
+  }
+  pinPadKey(key);
+}
+document.addEventListener("keydown", onPinKeydown);
 /* 手机自动授时（固件 2.6.6 起，规则和命令见 time-sync.js）。连上并通过密码后跑一次：
  * 先读 WiFi、OCPP 两个开关，有一个开着就不发；两个都关着才把手机当前时间和时区发给桩。
  * 旧固件不回 TIMESET，等不到就算了，界面上不提示。 */
@@ -1710,6 +1925,8 @@ function saveShown(id, kind) {
   }
 }
 watch(page, () => saveBtns.resetAll());
+/* 进密码页、改密码页：别的页上要是还有输入框拿着焦点（系统键盘开着），在这里放掉。 */
+watch(page, (now) => { if (now === "gate" || now === "pinmenu" || now === "pinedit") blurTyping(); });
 onBeforeUnmount(() => saveBtns.dispose());
 /* 手机键盘弹出时（焦点在文字输入框里）收起标签栏。 */
 const typing = ref(false);
@@ -1766,6 +1983,12 @@ function openPrivacy(from) {
 const appVersionInfo = resolveAppVersion(bridge(), typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "");
 const appVersionShort = appVersionLabel(appVersionInfo);
 const appVersionLong = appVersionFull(appVersionInfo);
+/* 点版本号（扫描页底部、首页底部、设置 → 关于）：手动检查 App 更新。打开 App 后的自动检查在
+ * UpdateDialog.vue 里；规则见 app-update.js。 */
+const updRef = ref(null);
+function checkAppUpdate() {
+  if (updRef.value && updRef.value.check) updRef.value.check();
+}
 /* 蓝牙/WiFi 模组版本（固件 2.6.12 起，命令和格式见 modver.js）。一次连接读到之后留着，
  * 菜单再打开不重读；没读到（旧固件、模组没回答）时每次打开菜单再试，版本页上可以手动重读。 */
 const modverState = ref("idle");      /* idle / asking / ok / unsupported / empty */
@@ -3057,6 +3280,10 @@ function resetCharge() {
   resetScrTheme();
   scrThemeKnown.value = false;
   scrThemeState.value = "idle";
+  resetPin();
+  pinState.value = "idle";
+  pinSuperCustom.value = false;
+  pinMenuNote.value = "";
   resetPhase();
   phaseKnown.value = false;
   phaseState.value = "idle";
@@ -3924,8 +4151,18 @@ function onFirmwareFile(event) {
   event.target.value = "";
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
-    const raw = new Uint8Array(reader.result);
+  reader.onload = () => loadFirmwareBytes(file.name, new Uint8Array(reader.result));
+  reader.readAsArrayBuffer(file);
+}
+/* 云端固件（CloudFw.vue）下载、校验好的字节：和本机选的文件走同一条路。升级进行中不换文件。 */
+function onCloudFirmware(got) {
+  if (otaBusy.value || !got || !got.bytes) return;
+  loadFirmwareBytes(got.name, got.bytes);
+}
+/* 选好的固件（本机文件或云端下载）：大小、类型、分区检查，通过后等「开始升级」。 */
+function loadFirmwareBytes(fileName, raw) {
+  {
+    const file = { name: fileName };
     const size = (raw.length + 3) & ~3;
     if (size < 8 || size > FIRMWARE_MAX) {
       otaImage = null;
@@ -3980,8 +4217,7 @@ function onFirmwareFile(event) {
     wifiQuiet.value = false;
     ocppQuiet.value = false;
     otaNote.value = "发送过程中充电桩亮白灯快闪";
-  };
-  reader.readAsArrayBuffer(file);
+  }
 }
 function acceptDowngrade() {
   downgradeAccepted = true;
@@ -4131,6 +4367,11 @@ async function confirmUpgrade() {
 function applyLine(line) {
   if (applyAuthLine(line)) return;
   if (typeof otaWait === "function" && otaWait(line)) return;
+  /* 改密码在等的行；没人等的时候 PINSET / SUPER 的应答也不往下走。 */
+  if (parsePinLine(line) !== null) {
+    if (typeof pinWait === "function") pinWait(line);
+    return;
+  }
   /* 授时在等的行（开关状态）照常往下走，界面上的开关也跟着更新。 */
   if (typeof timeWait === "function") timeWait(line);
   if (parseTimeAck(line) !== null) return;
@@ -4604,6 +4845,13 @@ button:disabled, input:disabled { opacity: 0.45; }
 .row strong, .row small { display: block; }
 .row small { margin-top: 4px; opacity: 0.55; }
 .row input { width: 22px; height: 22px; accent-color: #f5c400; }
+.row.check { width: 100%; border: 0; text-align: start; color: inherit; }
+.tick { flex: none; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 2px solid #666; border-radius: 6px; }
+.tick.on { background: #f5c400; border-color: #f5c400; }
+.tick.on::after { content: ""; width: 6px; height: 11px; margin-top: -2px; border: solid #000; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+.pin-warn { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, 0.78); }
+.pin-warn-box { display: flex; flex-direction: column; gap: 18px; width: 100%; max-width: 360px; padding: 22px 16px 16px; background: #161616; border: 1px solid #f0a020; border-radius: 18px; }
+.pin-warn-text { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.45; text-align: center; color: #f0a020; }
 .lte-form { display: flex; flex-direction: column; gap: 8px; }
 .lte-form .verkey { margin-top: 4px; }
 .lte-show { display: flex; align-items: center; gap: 8px; font-size: 13px; opacity: 0.75; }
@@ -4676,6 +4924,16 @@ select.field option { background: #111; color: #fff; }
  * .app.tabbed 给标签栏和 Home 条留了底边距，滚到底也不会被标签栏盖住。#8c8c8c 在黑底上约 6.9:1。 */
 .appver { margin: 2px 0 0; text-align: center; color: #8c8c8c; font-size: 12px; line-height: 1.4; letter-spacing: 0.02em; overflow-wrap: anywhere; }
 .appver bdi { font-variant-numeric: tabular-nums; }
+/* 扫描页底部：版本号（能点，检查更新）和出品方。两行都小、都在 scan-dock 里（flex: none），
+ * 不占设备列表的滚动区；矮屏上再收紧一点。 */
+.scan-dock .scan-ver { margin: -4px 0 0; padding: 4px 0 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.scan-dock .scan-ver:active { color: #b0b0b0; }
+.powerby { margin: -10px 0 0; text-align: center; color: #5f6368; font-size: 10px; line-height: 1.3; letter-spacing: 0.04em; user-select: none; -webkit-user-select: none; }
+@media (max-height: 560px) {
+  .scan-dock { gap: 8px; }
+  .scan-dock .scan-ver { margin-top: -2px; padding-top: 0; }
+  .powerby { margin-top: -6px; }
+}
 /* 「保存」按钮上的结果（save-btn.js）：保存中… 变淡；成功绿底、失败红底、黑字，2.5 秒后变回原样。
  * 字只占一行，放不下就省略，按钮的高度和宽度不变。这期间按钮是 disabled 的，但结果要看得清，
  * 所以不跟着 button:disabled 变淡。M01 的页面也用这几条（按钮在 App.vue 的根下面）。 */

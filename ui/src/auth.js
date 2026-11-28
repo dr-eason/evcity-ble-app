@@ -64,10 +64,13 @@ export function parseAuthLine(line) {
 /* 被拒的命令重新通过后要不要补发。
  *   AUTH、HB           不是这回事
  *   OTA…               固件数据有先后，补发一条没有意义，交给升级流程自己处理
- *   TIMESET            带着发出时刻的手机时间，晚发就不准了；授时流程会重新跑 */
+ *   TIMESET            带着发出时刻的手机时间，晚发就不准了；授时流程会重新跑
+ *   PINSET、SUPERSET   改密码不悄悄补发（pin-pad.js），新密码也不留在 lastSent 里 */
 export function resendable(text) {
   const name = commandName(text);
   if (!name || name === "AUTH" || name === "HB" || name === "TIMESET") return false;
+  /* 改密码：不在用户背后补发，参数（新密码）也就不会留在补发清单里。改密码页自己报“没改成”。 */
+  if (name === "PINSET" || name === "SUPERSET") return false;
   if (name.indexOf("OTA") === 0) return false;
   return true;
 }

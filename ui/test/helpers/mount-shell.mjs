@@ -33,14 +33,30 @@ async function loadShell() {
   const dir = mkdtempSync(resolve(tmpdir(), "ac06-shell-"));
   const stub = resolve(dir, "privacy-stub.mjs");
   writeFileSync(stub, "export default { render() { return null; } };\n");
+  /* 云端固件组件（固件升级页，两个页面共用）也是真的。 */
+  const cloudFile = resolve(dir, "CloudFw.mjs");
+  writeFileSync(cloudFile, compileOne(resolve(SRC, "CloudFw.vue"), dir, (code) => code
+    .replace(/from "\.\/([^"]+)"/g, (m, f) => "from " + url(resolve(SRC, f)))));
   const m01File = resolve(dir, "M01App.mjs");
   writeFileSync(m01File, compileOne(resolve(SRC, "m01/M01App.vue"), dir, (code) => code
     .replace(/from "\.\.\/PrivacyPolicy\.vue"/g, "from " + url(stub))
+    .replace(/from "\.\.\/CloudFw\.vue"/g, "from " + url(cloudFile))
     .replace(/from "\.\.\/([^"]+)"/g, (m, f) => "from " + url(resolve(SRC, f)))
     .replace(/from "\.\/([^"]+)"/g, (m, f) => "from " + url(resolve(SRC, "m01", f)))));
+  /* 数字键盘是真的组件（密码页、改密码页的测试要点它的键），和 App.vue 一样编出来。 */
+  const padFile = resolve(dir, "PinPad.mjs");
+  writeFileSync(padFile, compileOne(resolve(SRC, "PinPad.vue"), dir, (code) => code
+    .replace(/from "\.\/([^"]+)"/g, (m, f) => "from " + url(resolve(SRC, f)))));
+  /* App 更新的轻提示和弹窗（UpdateDialog.vue）：也是真的组件。假的 window.EVC 没有 updCheck，所以什么都不做。 */
+  const updFile = resolve(dir, "UpdateDialog.mjs");
+  writeFileSync(updFile, compileOne(resolve(SRC, "UpdateDialog.vue"), dir, (code) => code
+    .replace(/from "\.\/([^"]+)"/g, (m, f) => "from " + url(resolve(SRC, f)))));
   const appFile = resolve(dir, "App.mjs");
   writeFileSync(appFile, compileOne(resolve(SRC, "App.vue"), dir, (code) => code
     .replace(/from "\.\/PrivacyPolicy\.vue"/g, "from " + url(stub))
+    .replace(/from "\.\/PinPad\.vue"/g, "from " + url(padFile))
+    .replace(/from "\.\/UpdateDialog\.vue"/g, "from " + url(updFile))
+    .replace(/from "\.\/CloudFw\.vue"/g, "from " + url(cloudFile))
     .replace(/from "\.\/m01\/M01App\.vue"/g, "from " + url(m01File))
     .replace(/from "\.\/([^"]+)"/g, (m, f) => "from " + url(resolve(SRC, f)))));
   compiled = (await import(pathToFileURL(appFile).href)).default;

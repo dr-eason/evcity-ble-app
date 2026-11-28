@@ -72,7 +72,8 @@ jobs:
             ui/test/modver.test.mjs \
             ui/test/time-sync.test.mjs \
             ui/test/profile.test.mjs \
-            ui/test/app-version.test.mjs
+            ui/test/app-version.test.mjs \
+            ui/test/app-update.test.mjs
 
       - name: Install XcodeGen
         run: brew install xcodegen

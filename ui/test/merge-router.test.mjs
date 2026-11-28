@@ -7,7 +7,7 @@
  * 为 false 时不报，验证界面自己也认）；断开报 page "scan" 和“蓝牙已断开”。 */
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
-import { mountShell } from "./helpers/mount-shell.mjs";
+import { mountShell, textOf } from "./helpers/mount-shell.mjs";
 import { createPile } from "./helpers/m01-fw-versions.mjs";
 import { APP_VERSION } from "../src/m01/fw-compat.js";
 import { typeFromStatus } from "../src/devtype.js";
@@ -161,16 +161,12 @@ test("老 M01 没存密码：AC06 的密码页上输的密码带到 M01 模块�
   app.click("EVC_OLD023");
   await flush();
   assert.ok(app.text().includes("管理员密码") || app.text().includes("6 位"), app.text().slice(0, 300));
-  const input = app.root && (function find(n) {
-    if (!n || !n.children) return null;
-    if (n.tag === "input" && n.props.type === "password") return n;
-    for (const c of n.children) { const got = find(c); if (got) return got; }
-    return null;
-  })(app.root);
-  input.value = "123456";
-  (input.props["onUpdate:modelValue"] || (() => {}))("123456");
-  await flush();
-  app.click((n) => n.props.class === "go");
+  /* 密码页没有输入框了：在自己画的数字键盘上按六个键，满 6 位自动核对，不用再点「连接」。 */
+  assert.equal(app.inputs().length, 0);
+  for (const digit of "123456") {
+    app.click((n) => String(n.props.class || "").split(" ").includes("pin-key") && textOf(n) === digit);
+    await flush();
+  }
   await run(10000);
   assert.ok(app.text().includes("10 路充电桩"), app.text().slice(0, 300));
   assert.ok(piles[addr].log.includes("AUTH\t123456"));

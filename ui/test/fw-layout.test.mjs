@@ -3,7 +3,9 @@
  *     node --test AC06/tools/ble-finder/ui/test/fw-layout.test.mjs
  *
  * App 要认出文件是老分区（L1）还是新板（L2）的固件，认出桩是哪一种（OTAPREP 应答后面的
- * "L2"），对不上不发。数字和固件的 config/flash_layout_l1.h / _l2.h、wb2.c 对照。 */
+ * "L2"），对不上不发。老分区（L1）已经退役、不再发布 L1 的包，但现场还有 L1 的桩和残留的 L1
+ * 文件：识别和拒发的用例都要留着（防变砖）。L2 的数字和固件的 config/flash_layout.h、wb2.c
+ * 对照；L1 的数字是现场老桩的分区，固定不变，写在这里。 */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -80,6 +82,18 @@ test("认桩：OTAPREP / OTACHECK 后面的 L2", () => {
   assert.equal(pileLayoutFrom(""), 0);
 });
 
+test("L1 已退役，但残留的 L1 文件和老桩仍然认得出、仍然拒发", () => {
+  /* 残留的 L1 文件：认成 1，不是 0（“不是固件”），更不是 2。 */
+  assert.equal(firmwareLayout(L1()), 1);
+  assert.notEqual(firmwareLayout(L1()), 2);
+  /* 老桩（应答没有 L2 一段）+ 现在发布的 L2 文件：拒发。 */
+  assert.notEqual(layoutMismatchNote(firmwareLayout(L2()), pileLayoutFrom("ACK OTAPREP 1 1 1")), "");
+  /* 新板 + 残留的 L1 文件：拒发。 */
+  assert.notEqual(layoutMismatchNote(firmwareLayout(L1()), pileLayoutFrom("ACK OTAPREP 1 1 1 L2")), "");
+  /* 新板 + L2 文件：放行。 */
+  assert.equal(layoutMismatchNote(firmwareLayout(L2()), pileLayoutFrom("ACK OTACHECK 1 1 1 L2")), "");
+});
+
 test("对不上就不发，四种组合", () => {
   assert.equal(layoutMismatchNote(1, 1), "");
   assert.equal(layoutMismatchNote(2, 2), "");
@@ -90,22 +104,27 @@ test("对不上就不发，四种组合", () => {
 });
 
 test("数字和固件的分区表一致", () => {
-  const l1 = read("AC06/config/flash_layout_l1.h");
-  const l2 = read("AC06/config/flash_layout_l2.h");
+  const l2 = read("AC06/config/flash_layout.h");
   const num = (text, name) => {
-    const m = text.match(new RegExp("#define\\s+" + name + "\\s+(0x[0-9A-Fa-f]+)u"));
+    const m = text.match(new RegExp("#define\\s+" + name + "\\s+(0x[0-9A-Fa-f]+|\\d+)u"));
     assert.ok(m, name);
     return Number(m[1]);
   };
-  assert.equal(num(l1, "FLASH_APP_BASE"), LAYOUTS[1].base);
-  assert.equal(num(l1, "FLASH_APP_SIZE"), LAYOUTS[1].size);
+  /* 老分区（L1）：固件里已经没有它的分区头。现场老桩的数字固定，App 还靠它认残留的 L1 文件。 */
+  assert.equal(LAYOUTS[1].base, 0x0800c000);
+  assert.equal(LAYOUTS[1].size, 200 * 1024);
+  assert.equal(LAYOUTS[1].entryEnd, 0x0803e000);
+  /* 产品的分区头只有 L2，而且拒绝 -DAC06_LAYOUT=1。 */
+  assert.equal(num(l2, "FLASH_LAYOUT_ID"), 2);
+  assert.match(l2, /#if defined\(AC06_LAYOUT\) && \(AC06_LAYOUT != 2\)\s+#error/);
+  /* L2 的入口上限正好是老分区的应用起始地址：老桩的固件因此拒收 L2 的包。 */
+  assert.equal(num(l2, "FLASH_APP_ENTRY_END"), LAYOUTS[1].base);
   assert.equal(num(l2, "FLASH_APP_BASE"), LAYOUTS[2].base);
   assert.equal(num(l2, "FLASH_APP_SIZE"), LAYOUTS[2].size);
   assert.equal(num(l2, "FLASH_APP_ENTRY_END"), LAYOUTS[2].entryEnd);
   assert.equal(num(l2, "FLASH_LAYOUT_MARK_MAGIC"), LAYOUT_MARK_MAGIC);
   assert.equal(num(l2, "FLASH_LAYOUT_MARK_OFFSET"), LAYOUT_MARK_OFFSET);
-  assert.ok(!/FLASH_LAYOUT_MARK_MAGIC/.test(l1.replace(/\/\*[\s\S]*?\*\//g, "")), "L1 不带标记");
-  /* 固件在 OTAPREP / OTACHECK 后面报 L<布局号>，只在带标记的布局（L2）里。 */
+  /* 固件在 OTAPREP / OTACHECK 后面报 L<布局号>（带标记的布局，产品只有 L2）。 */
   const wb2 = read("AC06/app/src/wb2.c");
   assert.match(wb2, /#ifdef FLASH_LAYOUT_MARK_MAGIC\s+snprintf\(line, sizeof\(line\), "%s %u %u %u L%u"/);
 });

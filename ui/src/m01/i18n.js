@@ -8,6 +8,7 @@ import { m01Packs } from "./packs-m01.js";
 import { authPacks } from "./packs-auth.js";
 import { compatPacks } from "./packs-compat.js";
 import { saveBtnPacks } from "./packs-savebtn.js";
+import { cloudPacks } from "../packs-cloud.js";
 
 const en = {
   "返回": "Back",
@@ -437,6 +438,11 @@ const packs = { en, fr, ja, de, es, pt, ru, hi, ar, bn, id, ur };
 Object.keys(saveBtnPacks).forEach((lang) => {
   if (!packs[lang]) return;
   Object.keys(saveBtnPacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = saveBtnPacks[lang][key]; });
+});
+/* 固件升级页的「云端固件」（cloud-fw.js、CloudFw.vue）：packs-cloud.js。表里已经有的句子不覆盖。 */
+Object.keys(cloudPacks).forEach((lang) => {
+  if (!packs[lang]) return;
+  Object.keys(cloudPacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = cloudPacks[lang][key]; });
 });
 
 /* 这种语言的表里有没有这一句（不算回退到英文、不算按行首匹配）。测试用。 */

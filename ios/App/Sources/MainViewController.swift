@@ -22,6 +22,15 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
     /// 一键配置导出时开着的那个导出窗口和临时文件（和固件升级的选文件窗口区分开）。
     private var exportPicker: UIDocumentPickerViewController?
     private var exportTemp: URL?
+    /// 云端固件（AC-33）：EVC.cloudGet 的下载器，结果和进度是一句 JavaScript，走 run() 回页面。
+    private lazy var cloud = CloudFetch { [weak self] script in
+        self?.run(script)
+    }
+
+    /// App 更新检查（AC-34）：EVC.updCheck 的查询，结果是一句 JavaScript，走 run() 回页面。
+    private lazy var appUpdate = AppUpdateCheck { [weak self] script in
+        self?.run(script)
+    }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return .lightContent
@@ -183,6 +192,11 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
+        // App 更新检查（AC-34）：EVC.updCheck()。不进 BridgeCall，直接交给 AppUpdateCheck。
+        if message.name == Self.handlerName, AppUpdateRules.isCheckCall(message.body) {
+            appUpdate.check()
+            return
+        }
         guard message.name == Self.handlerName, let call = BridgeCall.parse(message.body) else {
             return
         }
@@ -214,6 +228,8 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
             exportFile(name: name, text: text)
         case .setProfile(let which):
             link?.setProfile(which)
+        case .cloudGet(let id, let url, let kind):
+            cloud.get(id: id, url: url, kind: kind)
         }
     }
 
@@ -221,6 +237,7 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
     /// 停扫、断开蓝牙、丢掉没送出去的事件、把页面重新加载一遍（页面一加载就会回到扫描页并开始扫）。
     private func restart() {
         link?.shutdown()
+        cloud.cancelAll()
         UIApplication.shared.isIdleTimerDisabled = false
         pending.removeAll()
         loadPage()

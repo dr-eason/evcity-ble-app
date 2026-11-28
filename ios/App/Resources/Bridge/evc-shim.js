@@ -85,6 +85,12 @@
     exportFile: function (name, text) {
       post("exportFile", [name == null ? "" : String(name), text == null ? "" : String(text)]);
     },
+    /* 云端固件（AC-33）：原生去 GET，结果回 window.__evcCloud.done(id, status, bodyBase64, error)，
+     * 进度回 window.__evcCloud.prog(id, done, total)。只放行固件服务器 /files/ 下面的地址。
+     * 不走 Mock：Mock BLE 模式下也是真的联网。 */
+    cloudGet: function (id, url, kind) {
+      post("cloudGet", [id == null ? "" : String(id), url == null ? "" : String(url), kind == null ? "" : String(kind)]);
+    },
     restart: function () {
       if (mockLink) {
         try { mockLink.call("shutdown", []); } catch (e) {}
@@ -92,6 +98,11 @@
       post("restart");
     }
   };
+
+  /* App 更新检查（AC-34）：原生去读文件站「Android APP/」的目录列表，和装着的版本比，结果回
+   * window.__evcUpd.onCheck({ok, latest, current, hasNew, file})。iOS 只有这一个：没有 updDownload /
+   * updInstall，界面看到没有 updDownload 就只提示「请前往 App Store 更新」。不走 Mock。 */
+  window.EVC.updCheck = function () { post("updCheck"); };
 
   /* 原生调页面用的入口。 */
   window.__evcNative = {

@@ -78,7 +78,7 @@ test("界面：首页底部和关于页都用 app-version.js 的结果，首页�
   /* 首页（立即充电）这一段里，「断开蓝牙」后面一行版本号。 */
   const charge = vue.slice(vue.indexOf(`<section v-else-if="page === 'charge'"`), vue.indexOf(`<section v-else-if="page === 'gate'"`));
   assert.ok(charge.length > 0);
-  assert.match(charge, /<button class="text alone" @click="disconnect">\{\{ t\('断开蓝牙'\) \}\}<\/button>\s*<p class="appver">\{\{ t\('App 版本'\) \}\} <bdi dir="ltr">\{\{ appVersionShort \}\}<\/bdi><\/p>\s*<\/section>/);
+  assert.match(charge, /<button class="text alone" @click="disconnect">\{\{ t\('断开蓝牙'\) \}\}<\/button>\s*<p class="appver" @click="checkAppUpdate">\{\{ t\('App 版本'\) \}\} <bdi dir="ltr">\{\{ appVersionShort \}\}<\/bdi><\/p>\s*<\/section>/);
   /* 关于页。 */
   assert.match(vue, /<strong>\{\{ t\('App 版本'\) \}\}<\/strong><\/span>\s*<em class="ver">\{\{ appVersionLong \}\}<\/em>/);
   /* 不再直接拿 __APP_VERSION__ 显示。 */

@@ -148,6 +148,85 @@ final class BridgeCallTests: XCTestCase {
         XCTAssertEqual(ExportRules.fileName("a\u{0}b\nc"), "abc.json")
     }
 
+    func testCloudGet() {
+        let url = "http://8.210.219.113:8088/files/AC06/"
+        XCTAssertEqual(call("cloudGet", ["c1", url, "text"]), .cloudGet(id: "c1", url: url, kind: "text"))
+        XCTAssertEqual(call("cloudGet", ["c2", url + "V3.0.9/a.bin", "bin"]),
+                       .cloudGet(id: "c2", url: url + "V3.0.9/a.bin", kind: "bin"))
+        // 地址不合格也照样解析出来：要回页面一个 blocked，由 CloudRules 在处理时拦。
+        XCTAssertEqual(call("cloudGet", ["c3", "https://example.com/", "text"]),
+                       .cloudGet(id: "c3", url: "https://example.com/", kind: "text"))
+        XCTAssertNil(call("cloudGet"))
+        XCTAssertNil(call("cloudGet", ["c1"]))
+        XCTAssertNil(call("cloudGet", ["c1", url]))
+        XCTAssertNil(call("cloudGet", ["c1", 5, "text"]))
+        XCTAssertNil(call("cloudGet", [1, url, "text"]))
+    }
+
+    func testCloudRulesAllowed() {
+        XCTAssertTrue(CloudRules.allowed(url: "http://8.210.219.113:8088/files/AC06/"))
+        XCTAssertTrue(CloudRules.allowed(url: "http://8.210.219.113:8088/files/M01/V1.0.0/"))
+        XCTAssertTrue(CloudRules.allowed(url: "http://8.210.219.113:8088/files/AC06/V3.0.9/V3.0.9_0093E971.bin"))
+        XCTAssertTrue(CloudRules.allowed(
+            url: "http://8.210.219.113:8088/files/AC06/V3.0.9/%E7%89%88%E6%9C%AC%E5%8D%87%E7%BA%A7%E8%AF%B4%E6%98%8E.html"))
+        XCTAssertEqual(CloudRules.url("http://8.210.219.113:8088/files/AC06/V3.0.9/a.bin")?.absoluteString,
+                       "http://8.210.219.113:8088/files/AC06/V3.0.9/a.bin")
+    }
+
+    func testCloudRulesBlocked() {
+        let bad = [
+            "",
+            "https://8.210.219.113:8088/files/AC06/",
+            "HTTP://8.210.219.113:8088/files/AC06/",
+            "ftp://8.210.219.113:8088/files/AC06/",
+            "file:///files/AC06/",
+            "http://8.210.219.113/files/AC06/",
+            "http://8.210.219.113:80/files/AC06/",
+            "http://8.210.219.113:8089/files/AC06/",
+            "http://example.com:8088/files/AC06/",
+            "http://8.210.219.113.example.com:8088/files/AC06/",
+            "http://8.210.219.113:8088@example.com/files/AC06/",
+            "http://user:pass@8.210.219.113:8088/files/AC06/",
+            "http://user@8.210.219.113:8088/files/AC06/",
+            "http://8.210.219.113:8088",
+            "http://8.210.219.113:8088/",
+            "http://8.210.219.113:8088/files",
+            "http://8.210.219.113:8088/file/AC06/",
+            "http://8.210.219.113:8088/upload/files/",
+            "http://8.210.219.113:8088/files/../etc/passwd",
+            "http://8.210.219.113:8088/files/AC06/..",
+            "http://8.210.219.113:8088/files/%2e%2e/secret",
+            "http://8.210.219.113:8088/files/AC06/%2E./x",
+            "http://8.210.219.113:8088/files/AC06/..%2Fx",
+            "http://8.210.219.113:8088\\@example.com/files/",
+            "http://8.210.219.113:8088/files/a\\..\\b",
+            "http://8.210.219.113:8088/files/a b",
+            "http://8.210.219.113:8088/files/a\nb",
+            " http://8.210.219.113:8088/files/AC06/",
+            "8.210.219.113:8088/files/AC06/",
+            "/files/AC06/",
+        ]
+        for text in bad {
+            XCTAssertFalse(CloudRules.allowed(url: text), text)
+            XCTAssertNil(CloudRules.url(text), text)
+        }
+        XCTAssertFalse(CloudRules.allowed(url: "http://8.210.219.113:8088/files/" + String(repeating: "a", count: 2048)))
+    }
+
+    func testCloudScripts() {
+        XCTAssertEqual(CloudRules.maxBytes, 1024 * 1024)
+        XCTAssertEqual(CloudRules.doneScript(id: "c1", status: 200, base64: "QUI=", error: ""),
+                       "window.__evcCloud&&window.__evcCloud.done&&window.__evcCloud.done.apply(null,"
+                           + "[\"c1\",200,\"QUI=\",\"\"])")
+        XCTAssertEqual(CloudRules.progScript(id: "c1", done: 10, total: 0),
+                       "window.__evcCloud&&window.__evcCloud.prog&&window.__evcCloud.prog.apply(null,[\"c1\",10,0])")
+        // id 是页面给的，引号、反斜杠、换行都要转义，不能从字符串里跑出来。
+        let script = CloudRules.doneScript(id: "a\");alert(1);(\"\n\u{2028}", status: 0, base64: "", error: "blocked")
+        XCTAssertTrue(script.contains("[\"a\\\");alert(1);(\\\"\\n\\u2028\",0,\"\",\"blocked\"])"))
+        XCTAssertFalse(script.contains("\n"))
+        XCTAssertFalse(script.contains("\u{2028}"))
+    }
+
     func testRubbish() {
         XCTAssertNil(BridgeCall.parse(nil))
         XCTAssertNil(BridgeCall.parse("scan"))
@@ -240,10 +319,10 @@ final class BridgeEventTests: XCTestCase {
 
     func testShimInitAppVersion() {
         let script = ShimInit(locale: "en", gate: [:], mock: false, nativeFilePicker: false,
-                              appVersion: "3.0.8", appBuild: "3008").script
+                              appVersion: "3.0.9", appBuild: "3009").script
         let body = String(script.dropFirst("window.__evcInit = ".count).dropLast(2))
         let object = decode(body)
-        XCTAssertEqual(object["appVersion"] as? String, "3.0.8")
-        XCTAssertEqual(object["appBuild"] as? String, "3008")
+        XCTAssertEqual(object["appVersion"] as? String, "3.0.9")
+        XCTAssertEqual(object["appBuild"] as? String, "3009")
     }
 }

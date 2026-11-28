@@ -57,5 +57,5 @@ export const SETTINGS_GROUPS = [
   { title: "网络与平台", items: ["openWifi", "openLte", "openOcpp", "openOcfw"] },
   { title: "保护与屏幕", items: ["openCfg", "openPhase", "openTz", "openScrLang", "openScrTheme", "openQr"] },
   { title: "维护", items: ["openProfiles", "openOta", "openModver", "openTelemetry", "openReboot"] },
-  { title: "关于", items: ["openAuthInfo", "openPrivacy('menu')"] },
+  { title: "关于", items: ["openAuthInfo", "openPinMenu", "openPrivacy('menu')"] },
 ];
