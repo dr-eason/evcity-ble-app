@@ -21,6 +21,16 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(AppUpdateRules.compare("3.1", "3.1.0"), 0)
         XCTAssertEqual(AppUpdateRules.compare("10.0.0", "9.9.9"), 1)
         XCTAssertEqual(AppUpdateRules.compare("3.00.08", "3.0.8"), 0)
+        // 版本号是 大版本.APP版本.固件版本：App 只有前两段（3.01）。历史的三段写法照样对得上。
+        XCTAssertEqual(AppUpdateRules.compare("3.01", "3.1.0"), 0)
+        XCTAssertEqual(AppUpdateRules.compare("3.1.0", "3.01"), 0)
+        XCTAssertEqual(AppUpdateRules.compare("3.02", "3.1.0"), 1)
+        XCTAssertEqual(AppUpdateRules.compare("3.02", "3.01"), 1)
+        XCTAssertEqual(AppUpdateRules.compare("3.0.9", "3.01"), -1)
+        XCTAssertEqual(AppUpdateRules.compare("4.00", "3.99"), 1)
+        XCTAssertEqual(AppUpdateRules.apkVersion("EVCITY-AC_V3.02.apk"), "3.02")
+        XCTAssertEqual(AppUpdateRules.latest(["EVCITY-AC_V3.0.9.apk", "EVCITY-AC_V3.02.apk", "EVCITY-AC_V3.1.0.apk"]),
+                       "EVCITY-AC_V3.02.apk")
         XCTAssertEqual(AppUpdateRules.compare("V3.0.9", "3.0.8"), 1)
         XCTAssertEqual(AppUpdateRules.compare("3.0.8-beta", "3.0.8"), 0)
         XCTAssertEqual(AppUpdateRules.compare("1.90071992547409931", "1.90071992547409930"), 1)

@@ -23,7 +23,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
-const NEW = ["3.0.0", "V3.0.0", "3.0.1", "3.1.0", "3.10.0", "4.0.0", "10.0.0"];
+const NEW = ["3.0.0", "V3.0.0", "3.0.1", "3.1.0", "3.01.00", "V3.01.02", "3.10.0", "4.0.0", "4.00.00", "10.0.0"];
 
 test("各功能的最低版本：3.x 都算够新", () => {
   for (const fw of NEW) {
@@ -95,18 +95,22 @@ test("OTA 选文件：镜像里的 AC06VER=3.0.0 认得出来", () => {
   assert.equal(ota.firmwareVersion(imageWith("AC06VER=3.0.0-rc")), "");
 });
 
-test("版本号三处一致（固件、安卓、iOS），而且是 3.x", () => {
+test("版本号：安卓、iOS 是 大版本.APP版本（两段），AC06 固件的前两段和它相同，而且是 3.x", () => {
   const fw = read("AC06/user/inc/app_config.h").match(/#define AC06_FW_VERSION\s+"([^"]+)"/)[1];
   const manifest = read("APP/android/AndroidManifest.xml");
   const name = manifest.match(/android:versionName="([^"]+)"/)[1];
   const code = Number(manifest.match(/android:versionCode="(\d+)"/)[1]);
   const ios = read("APP/ios/Config/Base.xcconfig");
-  assert.equal(name, fw);
-  assert.equal(ios.match(/^EVC_VERSION = (.+)$/m)[1], fw);
+  /* 书写补零：App 是 3.01，固件是 3.01.00（第 3 段是 AC06 自己的固件版本，不进 App 的版本和 build 号）。 */
+  assert.match(name, /^[1-9]\d?\.\d{2}$/);
+  assert.match(fw, /^[1-9]\d?\.\d{2}\.\d{2}$/);
+  assert.equal(fw.slice(0, name.length + 1), name + ".");
+  assert.equal(ios.match(/^EVC_VERSION = (.+)$/m)[1], name);
   assert.equal(Number(ios.match(/^EVC_BUILD = (\d+)$/m)[1]), code);
-  /* versionCode 的规则：主×1000 + 次×100 + 修订（2.8.0 → 2800，3.0.0 → 3000）。 */
-  const [a, b, c] = versionTriple(fw);
-  assert.ok(b < 10 && c < 100, "次版本 ≥ 10 或修订 ≥ 100 时这个规则要改");
-  assert.equal(code, a * 1000 + b * 100 + c);
+  /* versionCode 的规则：大版本×10000 + APP版本×100（3.01 → 30100）。比老规则
+   * （主×1000 + 次×100 + 修订，3.1.0 → 3100）下已经上架的号都大。 */
+  const [a, b] = versionTriple(fw);
+  assert.equal(code, a * 10000 + b * 100);
+  assert.ok(code > 3100);
   assert.ok(a >= 3);
 });

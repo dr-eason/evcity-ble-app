@@ -1,12 +1,16 @@
 /* App 自己的更新检查（AC-34）。界面在 UpdateDialog.vue，原生在 Android 的 AppUpdater.java 和 iOS 的
  * AppUpdateCheck.swift / EVCCore 的 AppUpdateRules。
  *
- * 服务器：OTA 文件站上和 AC06/、M01/ 同级的文件夹「Android APP/」，每个版本一个文件，名字固定
- * EVCITY-AC_V<版本>.apk（upload_release.sh 传的），没有清单文件。原生读目录列表那张 HTML 表，按文件名
- * 里的版本号逐段比数字，取最大的，和装着的版本比。页面是 file:// 的，文件站没有 CORS 头，所以页面
- * 自己不联网，只调 window.EVC：
+ * 服务器：OTA 文件站上和 AC06/、M01/ 同级的文件夹「Android APP/」，每个 App 版本一个文件，名字固定
+ * EVCITY-AC_V<大版本.APP版本>.apk，例如 EVCITY-AC_V3.02.apk（upload_release.sh 传的），没有清单文件。
+ * 版本号是 大版本.APP版本.固件版本（文档/版本规则.md）：App 只有前两段，文件名里不带固件段——只改固件
+ * 时不传新 APK。以前的文件名是三段的老写法（EVCITY-AC_V3.0.9.apk、EVCITY-AC_V3.1.0.apk），照样认：
+ * 前两段就是当时的 App 版本（3.1.0 = 3.01），第 3 段是老方案的修订号，只在两个都是老写法时才拿来比。
+ * 原生读目录列表那张 HTML 表，按文件名里的版本号逐段比数字，取最大的，和装着的版本比；是不是有新版本
+ * 这里再按上面的规则比一次（normalizeCheck），以这里的为准。页面是 file:// 的，文件站没有 CORS 头，
+ * 所以页面自己不联网，只调 window.EVC：
  *   updCheck()           两个平台都有。结果回 window.__evcUpd.onCheck(obj)：
- *                        {ok:true, latest:"3.0.9", current:"3.0.8", hasNew:true, file:"EVCITY-AC_V3.0.9.apk"}
+ *                        {ok:true, latest:"3.02", current:"3.01", hasNew:true, file:"EVCITY-AC_V3.02.apk"}
  *                        或 {ok:false, reason:"offline"|"http"|"parse"}
  *                        文件夹还不存在（HTTP 404 / 410）原生和空文件夹一样回 ok:true、latest ""、
  *                        hasNew false；万一回的是 {ok:false, reason:"http", status:404}，normalizeCheck
@@ -24,7 +28,7 @@
  *     不存在（404）都算。只有真的没查成（连不上、超时、非 404 的状态码、列表看不懂）才是「检查更新失败」。
  *
  * 弹窗：
- *   Android：「发现新版本 V3.0.9（当前 V3.0.8），是否下载并安装？」取消 = 关掉，什么都不做；
+ *   Android：「发现新版本 V3.02（当前 V3.01），是否下载并安装？」取消 = 关掉，什么都不做；
  *            下载安装 = 同一个窗口变成进度条（可取消），下完自动调起系统安装器；要先允许「安装未知
  *            应用」时原生打开设置页，回来后自动接着装；失败给原因和「重试」。
  *   iOS：    没有 updDownload。只弹「有软件更新，请前往 App Store 更新」+「知道了」，不下载。
@@ -40,7 +44,7 @@ export const AUTO_DELAY_MS = 2000;
 /* 原生的查询超时是 8 秒；过了这么久还没有 onCheck 就按失败算，免得一直停在「正在检查」。 */
 export const CHECK_WATCHDOG_MS = 15000;
 
-/* "EVCITY-AC_V3.0.9.apk" → "3.0.9"；不是这种名字 → ""。 */
+/* "EVCITY-AC_V3.02.apk" → "3.02"，老写法 "EVCITY-AC_V3.0.9.apk" → "3.0.9"；不是这种名字 → ""。 */
 export function apkVersion(name) {
   const m = typeof name === "string" ? APK_NAME_RE.exec(name) : null;
   return m ? m[1] : "";
@@ -58,19 +62,41 @@ function stripZeros(digits) {
   return out || "0";
 }
 
-/* 按数字逐段比：3.0.10 > 3.0.9，3.1 > 3.0.9，3.1 = 3.1.0；段数不够的当 0，认不出的当 0。返回 -1 / 0 / 1。
+function cmpDigits(a, b) {
+  const p = stripZeros(a);
+  const q = stripZeros(b);
+  if (p.length !== q.length) return p.length < q.length ? -1 : 1;
+  if (p !== q) return p < q ? -1 : 1;
+  return 0;
+}
+
+/* 比两个 App 版本，返回 -1 / 0 / 1。只比前两段（大版本、APP 版本），按数字比，补不补零一样：
+ *   3.02 > 3.01，3.01 = 3.1，10.00 > 9.99；段数不够的当 0，认不出的当 0。
+ * 老写法（三段，已发布的 3.0.9 / 3.1.0 和装着这些版本的手机）：前两段就是当时的 App 版本，所以
+ *   3.1.0 = 3.01（已装 3.1.0 的手机看到 EVCITY-AC_V3.01.apk 不提示），3.0.9 < 3.01，3.02 比它们都新
+ *   （新方案的第一个 App 版本就是 3.02：EVCITY-AC_V3.02.apk 传上去以后，装着 3.1.0 的手机会提示，这是预期的）。
+ * 第 3 段是老方案的修订号，只在两边都是三段写法时才接着比（3.0.9 > 3.0.8，3.1.0 > 3.0.9）；
+ * 一边是两段的新写法时不看它，所以 3.0.9 不会比 3.01 新，新写法的版本也不会被固件段影响。
  * 不转成 Number，位数再多也不丢精度。 */
 export function compareVersions(a, b) {
   const x = (versionCore(a) || "0").split(".");
   const y = (versionCore(b) || "0").split(".");
+  for (let i = 0; i < 2; i++) {
+    const c = cmpDigits(i < x.length ? x[i] : "0", i < y.length ? y[i] : "0");
+    if (c) return c;
+  }
+  if (x.length < 3 || y.length < 3) return 0;
   const n = Math.max(x.length, y.length);
-  for (let i = 0; i < n; i++) {
-    const p = stripZeros(i < x.length ? x[i] : "0");
-    const q = stripZeros(i < y.length ? y[i] : "0");
-    if (p.length !== q.length) return p.length < q.length ? -1 : 1;
-    if (p !== q) return p < q ? -1 : 1;
+  for (let i = 2; i < n; i++) {
+    const c = cmpDigits(i < x.length ? x[i] : "0", i < y.length ? y[i] : "0");
+    if (c) return c;
   }
   return 0;
+}
+
+/* 文件名里的版本是不是两段的新写法（大版本.APP版本）。 */
+function isAppName(version) {
+  return version.split(".").length === 2;
 }
 
 /* 目录列表 HTML → 名字合规矩的 APK 文件名。子目录（大小一栏是「目录」）和别的文件不要。
@@ -88,13 +114,15 @@ export function parseListing(html) {
   return out;
 }
 
-/* 版本最大的那个：{ file, version }；一个合规矩的都没有 → null。 */
+/* 版本最大的那个：{ file, version }；一个合规矩的都没有 → null。
+ * 一样大时（老写法 EVCITY-AC_V3.1.0.apk 和新写法 EVCITY-AC_V3.01.apk 是同一个 App 版本）要新写法的。 */
 export function latestApk(names) {
   let best = null;
   (Array.isArray(names) ? names : []).forEach((name) => {
     const version = apkVersion(name);
     if (!version) return;
-    if (!best || compareVersions(version, best.version) > 0) best = { file: name, version };
+    const c = best ? compareVersions(version, best.version) : 1;
+    if (c > 0 || (c === 0 && isAppName(version) && !isAppName(best.version))) best = { file: name, version };
   });
   return best;
 }

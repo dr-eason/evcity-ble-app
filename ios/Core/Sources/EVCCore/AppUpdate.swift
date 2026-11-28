@@ -3,8 +3,13 @@ import Foundation
 /// App 自己的更新检查（AC-34）里不依赖 UIKit / 网络的规则。和 Android 的 AppUpdater.java、
 /// 界面的 ui/src/app-update.js 是同一套：
 ///
-/// - 服务器：OTA 文件站上和 AC06/、M01/ 同级的文件夹「Android APP/」，每个版本一个文件，名字固定
-///   `EVCITY-AC_V<版本>.apk`（正则 `^EVCITY-AC_V(\d+(?:\.\d+)*)\.apk$`，数字只认 ASCII 的 0-9），没有清单文件。
+/// - 服务器：OTA 文件站上和 AC06/、M01/ 同级的文件夹「Android APP/」，每个 App 版本一个文件，名字固定
+///   `EVCITY-AC_V<大版本.APP版本>.apk`，例如 `EVCITY-AC_V3.02.apk`（正则 `^EVCITY-AC_V(\d+(?:\.\d+)*)\.apk$`，
+///   数字只认 ASCII 的 0-9），没有清单文件。
+/// - 版本号是 大版本.APP版本.固件版本（文档/版本规则.md）：App 只有前两段（CFBundleShortVersionString 现在是 3.02），
+///   文件名里不带固件段。以前的文件名是三段的老写法（`EVCITY-AC_V3.0.9.apk`、`EVCITY-AC_V3.1.0.apk`），按数字
+///   逐段比正好对得上：3.01 = 3.1 = 3.1.0，3.0.9 < 3.01 < 3.02。有没有新版本页面那头还会按「只比前两段」
+///   再比一次（ui/src/app-update.js 的 normalizeCheck），以页面的为准。
 /// - 读目录列表那张 HTML 表，名字不合规矩的文件和子目录（大小一栏是「目录」）不看，版本号按数字
 ///   逐段比，取最大的，和装着的版本（CFBundleShortVersionString）比。
 /// - iOS 只查不下载：有新版本时界面弹「有软件更新，请前往 App Store 更新」。iOS 和 Android 的
@@ -44,7 +49,7 @@ public enum AppUpdateRules {
         return true
     }
 
-    /// "EVCITY-AC_V3.0.9.apk" → "3.0.9"；不是这种名字返回 nil。
+    /// "EVCITY-AC_V3.02.apk" → "3.02"，老写法 "EVCITY-AC_V3.0.9.apk" → "3.0.9"；不是这种名字返回 nil。
     public static func apkVersion(_ fileName: String) -> String? {
         guard fileName.hasPrefix(apkPrefix), fileName.hasSuffix(apkSuffix),
               fileName.count > apkPrefix.count + apkSuffix.count else {
@@ -90,7 +95,8 @@ public enum AppUpdateRules {
         return rest
     }
 
-    /// 按数字逐段比：3.0.10 > 3.0.9，3.1 > 3.0.9，3.1 = 3.1.0。段数不够的当 0。返回 -1 / 0 / 1。
+    /// 按数字逐段比：3.02 > 3.01，3.01 = 3.1 = 3.1.0（补不补零一样），3.0.9 < 3.01，3.0.10 > 3.0.9。
+    /// 段数不够的当 0。返回 -1 / 0 / 1。
     /// 不转成整数，位数再多也不溢出。
     public static func compare(_ a: String, _ b: String) -> Int {
         let x = versionCore(a).split(separator: ".")

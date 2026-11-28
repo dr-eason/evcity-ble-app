@@ -10,16 +10,18 @@
  * 判断顺序：桩报了能力位（1.3.4 起）就只看能力位；没报就看版本号是否在 [since, until)。
  * 能力位是固件按自己真有的功能报的，以后去掉了某项、或者某一版裁掉了某项，App 不用改。
  *
- * 能力只管功能能不能用。"固件和 App 版本不同"的提示另算：只比版本号，不同就提示，能力位齐全也提示
- * （fwRelation() / compatNotice()）。
+ * 能力只管功能能不能用。"固件和 App 版本不同"的提示另算：只比版本号的前两段（大版本、APP 版本），
+ * 不同就提示，能力位齐全也提示；只是第 3 段（固件版本）不同不提示（fwRelation() / compatNotice()）。
  *
  * 这个文件不碰界面和蓝牙，主机测试 ui/test/fw-compat.test.mjs 直接用。 */
 
-/* 这个 App 的版本。和 AndroidManifest.xml 的 versionName、固件 M01_FW_VERSION、AC06_FW_VERSION 相同：
- * 3.1.0 起 AC06、M01、App 用同一个版本号（仓库根的 VERSION，规则见 文档/版本规则.md）。不手改：
- * tools/version/set_version.py 一次改全，check_version.py 和测试会核对。M01 自己的版本号到 1.3.6 为止，
+/* 这个 App 的版本：大版本.APP版本，两段（现在是 3.02），和 AndroidManifest.xml 的 versionName、iOS 的 EVC_VERSION 相同。
+ * 版本号是 大版本.APP版本.固件版本（3.01.00，规则见 文档/版本规则.md）：App 只有前两段，三段写法的第 3 段
+ * 永远是 00；固件 M01_FW_VERSION、AC06_FW_VERSION 的前两段和 App 相同，第 3 段是各自的固件版本。
+ * 解析时补不补零一样：3.1.0 = 3.01.00，3.01 = 3.01.00。不手改：来源是仓库根的 VERSION，
+ * tools/version/set_version.py 改，check_version.py 和测试会核对。M01 自己的版本号到 1.3.6 为止，
  * 所以能力表里的 since 都是 1.x，3.x 的固件比它们都新；现场 1.3.x 的桩连这个 App 都提示"固件比 App 旧"。 */
-export const APP_VERSION = "3.1.0";
+export const APP_VERSION = "3.02";
 
 /* ACK SYS 第 11 个字段（能力位）从这一版固件起有。更早的（含 1.3.3）只能按版本号查能力表。 */
 export const CAPS_FIELD_SINCE = "1.3.4";
@@ -80,7 +82,8 @@ export const CAPS = [
 
 const CAP_BY_KEY = Object.fromEntries(CAPS.map((cap) => [cap.key, cap]));
 
-/* "1.3.2"、"V1.3.2"、"1.3.2-dev" → [1, 3, 2]；"1.3" → [1, 3, 0]；认不出返回 null。 */
+/* "1.3.2"、"V1.3.2"、"1.3.2-dev" → [1, 3, 2]；"1.3" → [1, 3, 0]；认不出返回 null。
+ * 每段按数字读，补不补零一样："3.01.00" 和 "3.1.0" 都是 [3, 1, 0]，"3.01" 是 [3, 1, 0]。 */
 export function parseVersion(text) {
   const m = /^[Vv]?(\d{1,3})\.(\d{1,3})(?:\.(\d{1,3}))?(?![\d.])/.exec(String(text == null ? "" : text).trim());
   if (!m) return null;
@@ -98,7 +101,15 @@ export function compareVersion(a, b) {
   return 0;
 }
 
-/* 固件升级页：选的文件比桩上的旧（降级）。只按版本号比大小：1.3.x → 3.x 不是降级，3.x → 1.3.x 是。
+/* 只比前两段（大版本、APP 版本）：固件和 App 是不是"同一版"看这个。第 3 段是固件自己的版本，不参与。 */
+export function compareAppPart(a, b) {
+  const pa = Array.isArray(a) ? a : parseVersion(a);
+  const pb = Array.isArray(b) ? b : parseVersion(b);
+  if (!pa || !pb) throw new Error("bad version: " + a + " / " + b);
+  return pa[0] !== pb[0] ? pa[0] - pb[0] : pa[1] - pb[1];
+}
+
+/* 固件升级页：选的文件比桩上的旧（降级）。按完整三段比大小（同一个 大版本.APP版本 下第 3 段大的是新固件）：1.3.x → 3.x 不是降级，3.x → 1.3.x 是。
  * 哪一个认不出都不算降级。 */
 export function isDowngrade(fileVer, pileVer) {
   const file = parseVersion(fileVer);
@@ -166,16 +177,17 @@ export function capSince(key) {
 
 /* 固件和 App 的关系：
  *   pending  还没收到 ACK SYS        unknown  等不到、认不出，按 MIN_FW 算
- *   tooOld   比 MIN_FW 还老          older    版本号比 App 旧
- *   same     版本号和 App 相同        newer    版本号比 App 新（新功能要更新 App）
- * 只按版本号比，没有例外：版本号和 App 不同就提示（compatNotice()）。现场 1.3.x 的桩连 3.x 的 App，
- * 哪怕能力位是全的，也是 older、照样提示。能力位 / 能力表只管每项功能能不能用（supports()、lackNote()），
- * 不管这一行提示写不写。 */
+ *   tooOld   比 MIN_FW 还老          older    前两段比 App 旧
+ *   same     前两段和 App 相同        newer    前两段比 App 新（新功能要更新 App）
+ * 只比版本号的前两段（大版本、APP 版本），没有别的例外：前两段和 App 不同就提示（compatNotice()）。
+ * 第 3 段是固件自己的版本，只改固件时只有它变，不算"版本不同"：App 3.02 连固件 3.02.01 是 same、不提示。
+ * 现场 1.3.x 的桩连 3.x 的 App，哪怕能力位是全的，也是 older、照样提示。能力位 / 能力表只管每项功能
+ * 能不能用（supports()、lackNote()），不管这一行提示写不写。 */
 export function fwRelation(state, appVersion) {
   if (!state || !state.settled) return "pending";
   if (!state.known) return "unknown";
   if (compareVersion(state.parts, MIN_FW) < 0) return "tooOld";
-  const cmp = compareVersion(state.parts, appVersion || APP_VERSION);
+  const cmp = compareAppPart(state.parts, appVersion || APP_VERSION);
   if (cmp < 0) return "older";
   if (cmp > 0) return "newer";
   return "same";
@@ -201,7 +213,8 @@ function fwLabel(state) {
   return state && state.known ? state.fw : "—";
 }
 
-/* 首页、菜单顶上的那一行：{ text, vars, warn }；和 App 同一版、还没收到版本时是 null。 */
+/* 首页、菜单顶上的那一行：{ text, vars, warn }；前两段和 App 相同（只是固件的第 3 段不同也算）、
+ * 还没收到版本时是 null。 */
 export function compatNotice(state, appVersion) {
   const rel = fwRelation(state, appVersion);
   const app = appVersion || APP_VERSION;

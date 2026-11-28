@@ -79,7 +79,11 @@ export function parseListing(html) {
   return out;
 }
 
-/* "V3.0.9" / "V3.0.9.1" → [3, 0, 9] / [3, 0, 9, 1]；别的 → null。 */
+/* 版本号是 大版本.APP版本.固件版本，书写补零（文档/版本规则.md）：新的版本文件夹叫 V3.01.00，里面的固件叫
+ * V3.01.00_<CRC>.bin。服务器上已有的 V3.0.9、V3.1.0（当年不补零的写法）照样认：每段按数字读，3.1.0 = 3.01.00。
+ * 排新旧按完整三段比：同一个 大版本.APP版本 下第 3 段大的是新固件。
+ *
+ * "V3.01.02" / "V3.0.9" / "V3.0.9.1" → [3, 1, 2] / [3, 0, 9] / [3, 0, 9, 1]；别的 → null。 */
 export function versionParts(name) {
   const m = /^V(\d{1,4}(?:\.\d{1,4}){2,3})$/.exec(String(name));
   return m ? m[1].split(".").map(Number) : null;
@@ -104,7 +108,7 @@ export function hrefOk(href, under) {
   return true;
 }
 
-/* 版本文件夹：只收名字形如 V3.0.9 / V3.0.9.1 的目录，从新到旧；同名只留一个。 */
+/* 版本文件夹：只收名字形如 V3.01.00（或老写法 V3.0.9 / V3.0.9.1）的目录，从新到旧；同名只留一个。 */
 export function versionFolders(entries, under) {
   const seen = {};
   const out = [];
@@ -117,7 +121,8 @@ export function versionFolders(entries, under) {
   return out.sort((a, b) => compareVersions(b.name, a.name));
 }
 
-/* "V3.0.9_0093E971.bin" → { version: "3.0.9", crc: "0093E971" }；不是这个样子 → null。
+/* "V3.01.00_0093E971.bin" → { version: "3.01.00", crc: "0093E971" }，老写法 "V3.0.9_0093E971.bin" →
+ * { version: "3.0.9", crc: "0093E971" }；不是这个样子 → null。
  * 早先新板的包叫 V<版本>_L2_<CRC>.bin，也认。 */
 export function parseBinName(name) {
   const m = /^V(\d{1,4}(?:\.\d{1,4}){2,3})_(?:L2_)?([0-9A-Fa-f]{8})\.bin$/.exec(String(name));

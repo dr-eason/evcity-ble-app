@@ -16,6 +16,7 @@ import {
 } from "../src/auth.js";
 import { languages, translate } from "../src/i18n.js";
 import { authPacks } from "../src/packs-auth.js";
+import { repoVersion } from "./helpers/repo-version.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../../..");
@@ -488,17 +489,16 @@ test("编好的界面里有新文案（assets/index.html 是用这份源码编�
   assert.ok(html.includes("ACK\\\\s+AUTH\\\\s+LOCKED") || html.includes("AUTH\\s+LOCKED"));
 });
 
-/* 版本号不写死在测试里：AC06 固件、M01 固件、安卓、iOS 都等于仓库根的 VERSION（tools/version/set_version.py
- * 一次改全，check_version.py 核对；完整的核对在 version-sync.test.mjs）。这里只看和鉴权同一批发布的三处。 */
-const unified = (() => { try { return read("VERSION").trim(); } catch (e) { return ""; } })();
-const unifiedCode = String(unified.split(".").reduce((code, part, i) => code + Number(part) * [1000, 100, 1][i], 0));
-test("版本号等于仓库根的 VERSION：安卓、iOS、AC06 固件", { skip: unified ? false : "不在 AC-V2 单仓里（没有 VERSION）" }, () => {
-  assert.match(unified, /^\d\.\d\.\d$/);
+/* 版本号不写死在测试里：来源是仓库根的 VERSION（APP=大版本.APP版本，AC06= / M01= 各自的固件段；
+ * tools/version/set_version.py 改，check_version.py 核对；完整的核对在 version-sync.test.mjs）。
+ * 这里只看和鉴权同一批发布的三处：安卓、iOS 是两段的 App 版本，AC06 固件是它自己的三段版本。 */
+const repoVer = repoVersion();
+test("版本号等于仓库根的 VERSION：安卓、iOS、AC06 固件", { skip: repoVer ? false : "不在 AC-V2 单仓里（没有 VERSION）" }, () => {
   const manifest = read("APP/android/AndroidManifest.xml");
-  assert.equal(/android:versionName="([^"]+)"/.exec(manifest)[1], unified);
-  assert.equal(/android:versionCode="([^"]+)"/.exec(manifest)[1], unifiedCode);
+  assert.equal(/android:versionName="([^"]+)"/.exec(manifest)[1], repoVer.app);
+  assert.equal(/android:versionCode="([^"]+)"/.exec(manifest)[1], repoVer.build);
   const iosConf = read("APP/ios/Config/Base.xcconfig");
-  assert.equal(/^EVC_VERSION = (.+)$/m.exec(iosConf)[1], unified);
-  assert.equal(/^EVC_BUILD = (.+)$/m.exec(iosConf)[1], unifiedCode);
-  assert.equal(/#define AC06_FW_VERSION\s+"([^"]+)"/.exec(read("AC06/user/inc/app_config.h"))[1], unified);
+  assert.equal(/^EVC_VERSION = (.+)$/m.exec(iosConf)[1], repoVer.app);
+  assert.equal(/^EVC_BUILD = (.+)$/m.exec(iosConf)[1], repoVer.build);
+  assert.equal(/#define AC06_FW_VERSION\s+"([^"]+)"/.exec(read("AC06/user/inc/app_config.h"))[1], repoVer.ac06);
 });

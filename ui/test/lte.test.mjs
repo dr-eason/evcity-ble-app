@@ -18,6 +18,7 @@ import { SECTIONS, blankBody, defaultWithLte, readPlan, sameSection, sectionSkip
 import { languages, translate } from "../src/i18n.js";
 import { ltePacks } from "../src/packs-lte.js";
 import { wifiStatusText } from "../src/wifi-rssi.js";
+import { repoVersion } from "./helpers/repo-version.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ui = resolve(here, "..");
@@ -654,12 +655,11 @@ test("App.vue：4G 入口在 WiFi 配网下面；4G 页、互斥提示、首页�
   assert.match(script, /if \(line\.indexOf\("WCFG "\) === 0\) \{[\s\S]*?lteHome\.value = null;[\s\S]*?applyWifiConfig/);
 });
 
-test("版本号等于仓库根的 VERSION", () => {
+test("版本号等于仓库根的 VERSION", { skip: repoVersion() ? false : "不在 AC-V2 单仓里（没有 VERSION）" }, () => {
   const manifest = read("../android/AndroidManifest.xml");
-  const unified = read("../../VERSION").trim();
-  const [major, minor, patch] = unified.split(".").map(Number);
-  assert.equal(/android:versionName="([^"]+)"/.exec(manifest)[1], unified);
-  assert.equal(/android:versionCode="([^"]+)"/.exec(manifest)[1], String(major * 1000 + minor * 100 + patch));
+  const ver = repoVersion();
+  assert.equal(/android:versionName="([^"]+)"/.exec(manifest)[1], ver.app);
+  assert.equal(/android:versionCode="([^"]+)"/.exec(manifest)[1], ver.build);
 });
 
 /* 一键配置：带 APN（Protocol、APN、账号、密码），不带 4G 开关。 */

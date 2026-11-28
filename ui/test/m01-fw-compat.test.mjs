@@ -13,7 +13,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  APP_VERSION, CAPS, CAPS_FIELD_SINCE, COMPAT_TEXTS, FW_UNKNOWN, MIN_FW, SECTION_NEEDS, capSince, compareVersion, compatNotice,
+  APP_VERSION, CAPS, CAPS_FIELD_SINCE, COMPAT_TEXTS, FW_UNKNOWN, MIN_FW, SECTION_NEEDS, capSince, compareAppPart, compareVersion, compatNotice,
   fwGiveUp, fwRelation, fwState, isDowngrade, lackNote, parseCapBits, parseVersion, sectionLack, supports,
 } from "../src/m01/fw-compat.js";
 import { COMPAT_LANGS, COMPAT_ROWS, compatPacks } from "../src/m01/packs-compat.js";
@@ -181,54 +181,143 @@ test("拿不到版本：还没收到时、等不到时、认不出时都按最�
   assert.equal(fwGiveUp(known), known);
 });
 
-/* 3.1.0 起 M01、AC06、App 统一版本号：M01 固件从 1.3.6 直接到 3.1.0，App 的版本从 1.3.x 的 M01 模块版本
- * 变成 3.x。能力判断不能因为这一跳出错；版本号和 App 不同一律提示，能力位齐全也不例外。 */
-test("版本号从 1.3.x 跳到 3.x：能力照旧；版本号比 App 旧的一律提示，能力位齐全也提示", () => {
+/* 3.1.0（解析等于 3.01.00）起 M01、AC06、App 的前两段统一：M01 固件从 1.3.6 直接到 3.x，App 的版本从 1.3.x 的
+ * M01 模块版本变成 3.x。能力判断不能因为这一跳出错；前两段和 App 不同一律提示，能力位齐全也不例外。 */
+test("版本号从 1.3.x 跳到 3.x：能力照旧；前两段比 App 旧的一律提示，能力位齐全也提示", () => {
   assert.ok(compareVersion(APP_VERSION, "3.1.0") >= 0, "App 的版本是统一后的 3.x");
   assert.ok(compareVersion(FW_NOW, "3.1.0") >= 0, "M01 固件的版本是统一后的 3.x");
   /* 3.x 的固件：报了能力位照能力位；没报（不该发生）按版本号，比表里所有的 since 都新，全有。 */
   for (const cap of CAPS) {
     assert.ok(compareVersion(cap.since, "3.0.0") < 0, cap.key + " 的 since 是 M01 自己的 1.x 版本号");
-    assert.equal(supports(stateOf("3.1.0"), cap.key), true, cap.key);
-    assert.equal(supports(stateOf("3.1.0", ALL_BITS), cap.key), true, cap.key);
-    assert.equal(supports(stateOf("3.1.0", "0"), cap.key), false, cap.key + "：能力位说没有就是没有");
+    for (const fw of ["3.1.0", "3.01.00", "3.01.02"]) {
+      assert.equal(supports(stateOf(fw), cap.key), true, cap.key);
+      assert.equal(supports(stateOf(fw, ALL_BITS), cap.key), true, cap.key);
+      assert.equal(supports(stateOf(fw, "0"), cap.key), false, cap.key + "：能力位说没有就是没有");
+    }
   }
   /* 同版：没有提示。 */
-  assert.equal(compatNotice(stateOf("3.1.0", ALL_BITS), "3.1.0"), null);
-  assert.equal(fwRelation(stateOf("3.1.0", ALL_BITS), "3.1.0"), "same");
+  assert.equal(compatNotice(stateOf("3.01.00", ALL_BITS), "3.01.00"), null);
+  assert.equal(fwRelation(stateOf("3.01.00", ALL_BITS), "3.01.00"), "same");
   const olderNotice = (fw, app) => ({ text: COMPAT_TEXTS.older, vars: { fw, app, min: MIN_FW }, warn: false });
-  /* App 比固件新一版（App 每次发版都加一，现场的桩还没升级）：能力位齐全也提示。 */
-  assert.equal(fwRelation(stateOf("3.1.0", ALL_BITS), "3.1.1"), "older");
-  assert.deepEqual(compatNotice(stateOf("3.1.0", ALL_BITS), "3.1.1"), olderNotice("3.1.0", "3.1.1"));
+  /* App 比固件新一档（App 版本加了一，现场的桩还没升级）：能力位齐全也提示。 */
+  assert.equal(fwRelation(stateOf("3.01.00", ALL_BITS), "3.02"), "older");
+  assert.deepEqual(compatNotice(stateOf("3.01.05", ALL_BITS), "3.02"), olderNotice("3.01.05", "3.02"));
   /* 现场的老固件：1.3.4～1.3.6 能力位齐全，功能全有，照样是 older、照样提示。 */
   for (const fw of ["1.3.4", "1.3.5", "1.3.6"]) {
     const state = stateOf(fw, ALL_BITS);
     for (const cap of CAPS) assert.equal(supports(state, cap.key), true, fw + " " + cap.key);
-    assert.equal(fwRelation(state, "3.1.0"), "older", fw);
-    assert.deepEqual(compatNotice(state, "3.1.0"), olderNotice(fw, "3.1.0"), fw);
+    for (const app of ["3.01", "3.01.00", "3.1.0"]) {
+      assert.equal(fwRelation(state, app), "older", fw);
+      assert.deepEqual(compatNotice(state, app), olderNotice(fw, app), fw);
+    }
   }
   /* 1.3.2 / 1.3.3 没有能力位，按版本号功能全有：也是 older、也提示。 */
   for (const fw of ["1.3.2", "1.3.3"]) {
     const state = stateOf(fw);
     for (const cap of CAPS) assert.equal(supports(state, cap.key), true, fw + " " + cap.key);
-    assert.equal(fwRelation(state, "3.1.0"), "older", fw);
-    assert.deepEqual(compatNotice(state, "3.1.0"), olderNotice(fw, "3.1.0"), fw);
+    assert.equal(fwRelation(state, "3.01"), "older", fw);
+    assert.deepEqual(compatNotice(state, "3.01"), olderNotice(fw, "3.01"), fw);
   }
   /* 缺功能的也是这一句，另外每项缺的功能有自己的提示：1.2.0 没有能力位，按版本号缺 1.3.x 的项；
    * 1.3.6 的能力位里少一项（bit 12）也算。 */
-  assert.equal(fwRelation(stateOf("1.2.0"), "3.1.0"), "older");
-  assert.equal(compatNotice(stateOf("1.2.0"), "3.1.0").text, COMPAT_TEXTS.older);
+  assert.equal(fwRelation(stateOf("1.2.0"), "3.01"), "older");
+  assert.equal(compatNotice(stateOf("1.2.0"), "3.01").text, COMPAT_TEXTS.older);
   assert.equal(lackNote(stateOf("1.2.0"), "ocppWss").text, COMPAT_TEXTS.lack);
-  assert.equal(fwRelation(stateOf("1.3.6", "FFF"), "3.1.0"), "older");
-  assert.equal(compatNotice(stateOf("1.3.6", "FFF"), "3.1.0").text, COMPAT_TEXTS.older);
+  assert.equal(fwRelation(stateOf("1.3.6", "FFF"), "3.01"), "older");
+  assert.equal(compatNotice(stateOf("1.3.6", "FFF"), "3.01").text, COMPAT_TEXTS.older);
   assert.equal(lackNote(stateOf("1.3.6", "FFF"), "apHex").text, COMPAT_TEXTS.lack);
   assert.equal(lackNote(stateOf("1.3.6", ALL_BITS), "apHex"), null);
   /* 比 App 新的照旧提示。 */
-  assert.equal(fwRelation(stateOf("3.1.1", ALL_BITS), "3.1.0"), "newer");
-  /* 升级页只按版本号比大小：1.3.x → 3.x 不是降级，3.x → 1.3.x 是。 */
-  assert.equal(isDowngrade("3.1.0", "1.3.6"), false);
-  assert.equal(isDowngrade("1.3.6", "3.1.0"), true);
-  assert.equal(isDowngrade("3.1.0", "3.1.0"), false);
+  assert.equal(fwRelation(stateOf("3.02.00", ALL_BITS), "3.01"), "newer");
+  /* 升级页按完整三段比大小：1.3.x → 3.x 不是降级，3.x → 1.3.x 是；同一个 大版本.APP版本 下第 3 段小的是降级。 */
+  assert.equal(isDowngrade("3.01.00", "1.3.6"), false);
+  assert.equal(isDowngrade("1.3.6", "3.01.00"), true);
+  assert.equal(isDowngrade("3.01.00", "3.01.00"), false);
+  assert.equal(isDowngrade("3.1.0", "3.01.00"), false);
+  assert.equal(isDowngrade("3.01.01", "3.01.02"), true);
+  assert.equal(isDowngrade("3.01.02", "3.01.01"), false);
+  assert.equal(isDowngrade("3.01.09", "3.1.10"), true);
+});
+
+/* 版本定义：大版本.APP版本.固件版本，写成 3.01.00（文档/版本规则.md）。 */
+test("补零和不补零的写法解析相等：3.1.0 = 3.01.00，3.01 = 3.01.00", () => {
+  assert.deepEqual(parseVersion("3.01.00"), [3, 1, 0]);
+  assert.deepEqual(parseVersion("3.1.0"), [3, 1, 0]);
+  assert.deepEqual(parseVersion("V3.01.02"), [3, 1, 2]);
+  assert.deepEqual(parseVersion("3.01"), [3, 1, 0]);
+  assert.deepEqual(parseVersion("10.00.07"), [10, 0, 7]);
+  assert.equal(compareVersion("3.1.0", "3.01.00"), 0);
+  assert.equal(compareVersion("3.0.9", "3.00.09"), 0);
+  assert.equal(compareVersion("3.01", "3.01.00"), 0);
+  assert.ok(compareVersion("3.01.02", "3.01.01") > 0);
+  assert.ok(compareVersion("3.02.00", "3.01.99") > 0);
+  assert.ok(compareVersion("3.0.9", "3.01.00") < 0);
+  assert.ok(compareVersion("3.10.00", "3.1.0") > 0, "3.10 不是 3.1");
+  assert.equal(compareAppPart("3.01.07", "3.1.0"), 0);
+  assert.equal(compareAppPart("3.01.07", "3.01"), 0);
+  assert.ok(compareAppPart("3.02.00", "3.01.99") > 0);
+  assert.ok(compareAppPart("2.99.99", "3.00.00") < 0);
+  assert.throws(() => compareAppPart("garbage", "3.01"));
+  /* 老写法的固件连新写法的 App，同一版：不提示。 */
+  for (const [fw, app] of [["3.1.0", "3.01.00"], ["3.01.00", "3.1.0"], ["3.1.0", "3.01"], ["3.01.00", "3.01"]]) {
+    assert.equal(fwRelation(stateOf(fw, ALL_BITS), app), "same", fw + " / " + app);
+    assert.equal(compatNotice(stateOf(fw, ALL_BITS), app), null, fw + " / " + app);
+  }
+});
+
+test("版本不一致的提示只看前两段：只是第 3 段（固件版本）不同不提示", () => {
+  /* App 3.01（内部三段写法 3.01.00）。 */
+  for (const app of ["3.01.00", "3.01"]) {
+    /* 同一个 大版本.APP版本：固件的第 3 段是多少都不提示（只改固件时只有它变）。 */
+    for (const fw of ["3.01.00", "3.01.02", "3.01.99", "3.1.2"]) {
+      for (const bits of [ALL_BITS, undefined]) {
+        assert.equal(fwRelation(stateOf(fw, bits), app), "same", fw);
+        assert.equal(compatNotice(stateOf(fw, bits), app), null, fw);
+      }
+    }
+    /* APP 段或大版本不同：提示，能力位齐全也提示。 */
+    for (const [fw, rel] of [["3.02.00", "newer"], ["3.02.07", "newer"], ["4.00.00", "newer"],
+      ["3.00.00", "older"], ["3.00.99", "older"], ["3.0.9", "older"], ["1.3.6", "older"], ["2.99.99", "older"]]) {
+      const state = stateOf(fw, ALL_BITS);
+      assert.equal(fwRelation(state, app), rel, fw);
+      assert.deepEqual(compatNotice(state, app), { text: COMPAT_TEXTS[rel], vars: { fw, app, min: MIN_FW }, warn: false }, fw);
+    }
+  }
+  /* 这个 App 自己的版本也一样：同前两段的任何固件都不提示。 */
+  const [major, appNo] = parseVersion(APP_VERSION);
+  const pad = (n) => String(n).padStart(2, "0");
+  for (const seg of [0, 2, 99]) {
+    const fw = major + "." + pad(appNo) + "." + pad(seg);
+    assert.equal(fwRelation(stateOf(fw, ALL_BITS)), "same", fw);
+    assert.equal(compatNotice(stateOf(fw, ALL_BITS)), null, fw);
+  }
+  assert.equal(compatNotice(stateOf(major + "." + pad(appNo + 1) + ".00", ALL_BITS)).text, COMPAT_TEXTS.newer);
+  /* App 的版本写两段（商店版本），和 versionName 一个写法。 */
+  assert.match(APP_VERSION, /^[1-9]\d?\.\d{2}$/);
+});
+
+/* 新方案的第一个版本：App 3.02（内部三段写法 3.02.00），两款固件 3.02.01。第 3 段不同是合法的，不提示；
+ * 现场 1.3.6 的 M01、按老版本（3.1.0 = 3.01.00）编的固件前两段和 App 不同，要提示。 */
+test("App 3.02 连固件 3.02.01 不提示；连 1.3.6 或 3.01.00（= 3.1.0）提示固件比 App 旧", () => {
+  const older = (fw, app) => ({ text: COMPAT_TEXTS.older, vars: { fw, app, min: MIN_FW }, warn: false });
+  for (const app of ["3.02", "3.02.00"]) {
+    for (const bits of [ALL_BITS, undefined]) {
+      assert.equal(fwRelation(stateOf("3.02.01", bits), app), "same");
+      assert.equal(compatNotice(stateOf("3.02.01", bits), app), null);
+    }
+    for (const fw of ["1.3.6", "3.01.00", "3.1.0", "3.01.02", "3.0.9"]) {
+      assert.equal(fwRelation(stateOf(fw, ALL_BITS), app), "older", fw);
+      assert.deepEqual(compatNotice(stateOf(fw, ALL_BITS), app), older(fw, app), fw);
+    }
+  }
+  /* 这个仓库现在的 App 和 M01 固件（夹具里的 M01_FW_VERSION）：前两段相同，不提示；不早于 3.02 / 3.02.01。 */
+  assert.equal(compareAppPart(FW_NOW, APP_VERSION), 0, FW_NOW + " / " + APP_VERSION);
+  assert.equal(fwRelation(stateOf(FW_NOW, ALL_BITS)), "same");
+  assert.equal(compatNotice(stateOf(FW_NOW, ALL_BITS)), null);
+  assert.ok(compareVersion(APP_VERSION, "3.02") >= 0, "App 的版本 " + APP_VERSION);
+  assert.ok(compareVersion(FW_NOW, "3.02.01") >= 0, "M01 固件的版本 " + FW_NOW);
+  assert.deepEqual(compatNotice(stateOf("1.3.6", ALL_BITS)), older("1.3.6", APP_VERSION));
+  assert.deepEqual(compatNotice(stateOf("3.1.0", ALL_BITS)), older("3.1.0", APP_VERSION));
 });
 
 test("固件和 App 的关系：还没收到、读不到、太老、旧、同版、新，各有一句提示", () => {
@@ -240,13 +329,16 @@ test("固件和 App 的关系：还没收到、读不到、太老、旧、同版
   assert.equal(compatNotice(stateOf("0.9.0")).text, COMPAT_TEXTS.tooOld);
   assert.equal(fwRelation(stateOf("1.2.0")), "older");
   assert.deepEqual(compatNotice(stateOf("1.2.0")), { text: COMPAT_TEXTS.older, vars: { fw: "1.2.0", app: APP_VERSION, min: MIN_FW }, warn: false });
-  assert.equal(fwRelation(stateOf(APP_VERSION, ALL_BITS)), "same");
-  assert.equal(compatNotice(stateOf(APP_VERSION, ALL_BITS)), null);
+  assert.equal(fwRelation(stateOf(APP_VERSION + ".00", ALL_BITS)), "same");
+  assert.equal(compatNotice(stateOf(APP_VERSION + ".00", ALL_BITS)), null);
+  assert.equal(fwRelation(stateOf(FW_NOW, ALL_BITS)), "same");
+  assert.equal(compatNotice(stateOf(FW_NOW, ALL_BITS)), null);
   const newer = (Number(APP_VERSION.split(".")[0]) + 1) + ".0.0";
   assert.equal(fwRelation(stateOf(newer, ALL_BITS)), "newer");
   assert.equal(compatNotice(stateOf(newer, ALL_BITS)).text, COMPAT_TEXTS.newer);
-  /* 传进来的 App 版本优先（测试用）。 */
-  assert.equal(fwRelation(stateOf("1.3.4"), "1.3.3"), "newer");
+  /* 传进来的 App 版本优先（测试用）。只比前两段：1.3.4 对 1.3.3 是同一版，1.4.0 对 1.3.3 才是新。 */
+  assert.equal(fwRelation(stateOf("1.3.4"), "1.3.3"), "same");
+  assert.equal(fwRelation(stateOf("1.4.0"), "1.3.3"), "newer");
 });
 
 test("缺某项时的提示：写明固件版本和要升级到哪一版；读不到版本时换一句", () => {

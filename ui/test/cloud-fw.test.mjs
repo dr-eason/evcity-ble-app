@@ -79,6 +79,53 @@ test("版本文件夹：只收 V3.0.9 / V3.0.9.1 这样的目录，按版本号�
   assert.equal(compareVersions("V3.0.9", "V3.0.9"), 0);
 });
 
+/* 版本定义：大版本.APP版本.固件版本，书写补零（文档/版本规则.md）。新目录是 V3.01.00/，里面是 V3.01.00_<CRC>.bin；
+ * 服务器上已有的 V3.0.9/、V3.1.0/ 和里面的 V3.1.0_<CRC>.bin 是当年的写法，照样认。 */
+test("版本文件夹和固件文件名：补零的新写法和老写法都认，按完整三段排新旧", () => {
+  assert.deepEqual(versionParts("V3.01.00"), [3, 1, 0]);
+  assert.deepEqual(versionParts("V3.1.0"), [3, 1, 0]);
+  assert.deepEqual(versionParts("V3.01.02"), [3, 1, 2]);
+  assert.deepEqual(versionParts("V10.00.07"), [10, 0, 7]);
+  assert.equal(compareVersions("V3.1.0", "V3.01.00"), 0, "3.1.0 = 3.01.00");
+  assert.equal(compareVersions("V3.0.9", "V3.00.09"), 0);
+  /* 同一个 大版本.APP版本 下，第 3 段大的是新固件。 */
+  assert.ok(compareVersions("V3.01.02", "V3.01.01") > 0);
+  assert.ok(compareVersions("V3.01.10", "V3.01.09") > 0);
+  assert.ok(compareVersions("V3.01.01", "V3.1.0") > 0);
+  assert.ok(compareVersions("V3.02.00", "V3.01.99") > 0);
+  assert.ok(compareVersions("V4.00.00", "V3.99.99") > 0);
+  assert.ok(compareVersions("V3.01.00", "V3.0.9") > 0);
+  assert.ok(compareVersions("V3.10.00", "V3.1.0") > 0, "3.10 不是 3.1");
+  const entries = parseListing(page([
+    row("/files/AC06/V3.0.9/", "V3.0.9", "目录"),
+    row("/files/AC06/V3.01.02/", "V3.01.02", "目录"),
+    row("/files/AC06/V3.1.0/", "V3.1.0", "目录"),
+    row("/files/AC06/V3.02.00/", "V3.02.00", "目录"),
+    row("/files/AC06/V3.01.01/", "V3.01.01", "目录"),
+    row("/files/AC06/V3.01/", "V3.01", "目录"),               /* 两段的是 App 版本，不是固件目录 */
+  ]));
+  const got = versionFolders(entries, cloudDirPath("ac06"));
+  assert.deepEqual(got.map((v) => v.label), ["V3.02.00", "V3.01.02", "V3.01.01", "V3.1.0", "V3.0.9"]);
+  assert.equal(got[1].href, "/files/AC06/V3.01.02/");
+  /* M01 的目录一样。 */
+  const m01 = versionFolders(parseListing(page([
+    row("/files/M01/V3.1.0/", "V3.1.0", "目录"),
+    row("/files/M01/V3.01.01/", "V3.01.01", "目录"),
+  ])), cloudDirPath("m01"));
+  assert.deepEqual(m01.map((v) => v.label), ["V3.01.01", "V3.1.0"]);
+  /* 文件名。版本原样带出（界面照文件名显示），CRC 照旧核对。 */
+  assert.deepEqual(parseBinName("V3.01.00_0093E971.bin"), { version: "3.01.00", crc: "0093E971" });
+  assert.deepEqual(parseBinName("V3.01.02_abcdef01.bin"), { version: "3.01.02", crc: "ABCDEF01" });
+  assert.deepEqual(parseBinName("V3.1.0_0093E971.bin"), { version: "3.1.0", crc: "0093E971" });
+  assert.deepEqual(parseBinName("V10.00.00_0093E971.bin"), { version: "10.00.00", crc: "0093E971" });
+  assert.equal(parseBinName("V3.01_0093E971.bin"), null);
+  const files = binFiles(parseListing(page([
+    row("/files/AC06/V3.01.02/V3.01.02_0093E971.bin", "V3.01.02_0093E971.bin", "188.4 KB"),
+    row("/files/AC06/V3.01.02/AC06_V3.01.02_x.zip", "AC06_V3.01.02_x.zip", "9 MB"),
+  ])), "/files/AC06/V3.01.02/");
+  assert.deepEqual(files, [{ name: "V3.01.02_0093E971.bin", size: "188.4 KB", href: "/files/AC06/V3.01.02/V3.01.02_0093E971.bin", version: "3.01.02", crc: "0093E971" }]);
+});
+
 test("固件文件：只留 .bin，带出文件名里的版本和 CRC；文件名不合规则的 .bin 也留着（M01）", () => {
   const sample = binFiles(parseListing(SAMPLE));
   assert.deepEqual(sample, [{ name: "V3.0.8_0093E971.bin", size: "188.4 KB", href: "/files/AC06_V3.0.8/V3.0.8_0093E971.bin", version: "3.0.8", crc: "0093E971" }]);

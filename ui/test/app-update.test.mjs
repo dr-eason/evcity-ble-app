@@ -16,6 +16,7 @@ import {
 } from "../src/app-update.js";
 import { updatePacks } from "../src/packs-update.js";
 import { mountShell } from "./helpers/mount-shell.mjs";
+import { repoVersion } from "./helpers/repo-version.mjs";
 
 mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
 
@@ -34,14 +35,16 @@ const page = (...rows) => `<html><body><h1>文件列表</h1><p><a href="/files/"
 
 /* ---- 版本比较 ---- */
 
-test("版本比较：按数字逐段比，不是按字符串", () => {
+test("版本比较：按数字比，不是按字符串；老写法（三段）之间逐段比", () => {
   assert.equal(compareVersions("3.0.10", "3.0.9"), 1);
   assert.equal(compareVersions("3.0.9", "3.0.10"), -1);
   assert.equal(compareVersions("3.0.8", "3.0.8"), 0);
   assert.equal(compareVersions("3.1", "3.0.9"), 1);
   assert.equal(compareVersions("3.0.9", "3.1"), -1);
   assert.equal(compareVersions("3.1", "3.1.0"), 0);
-  assert.equal(compareVersions("3.1.0.1", "3.1"), 1);
+  /* 一边是两段（新写法）：只比前两段，后面的不看。 */
+  assert.equal(compareVersions("3.1.0.1", "3.1"), 0);
+  assert.equal(compareVersions("3.1.0.1", "3.1.0"), 1);
   assert.equal(compareVersions("10.0.0", "9.9.9"), 1);
   assert.equal(compareVersions("3.00.08", "3.0.8"), 0);
   assert.equal(compareVersions("V3.0.9", "3.0.8"), 1);
@@ -50,9 +53,104 @@ test("版本比较：按数字逐段比，不是按字符串", () => {
   assert.equal(compareVersions("1.90071992547409931", "1.90071992547409930"), 1);
   /* 认不出的当 0 */
   assert.equal(compareVersions("", "0"), 0);
-  assert.equal(compareVersions("abc", "0.0.1"), -1);
+  assert.equal(compareVersions("abc", "0.1"), -1);
+  assert.equal(compareVersions("abc", "0.0.1"), 0);       /* 认不出的是一段的 "0"：不看第 3 段 */
   assert.equal(versionCore(" v3.0.8 (3008)"), "3.0.8");
   assert.equal(versionCore("—"), "");
+});
+
+/* 版本定义：大版本.APP版本.固件版本（文档/版本规则.md）。App 只有前两段（3.01），APK 叫 EVCITY-AC_V3.01.apk。
+ * 历史上的 APK 是三段的老写法（3.0.8、3.0.9、3.1.0），装着这些版本的手机也还在。 */
+test("版本比较：只比 大版本.APP版本；3.1.0 = 3.01，3.0.9 < 3.01，3.02 比它们都新", () => {
+  /* 新写法和历史写法相等：3.01 就是当年的 3.1.0。 */
+  for (const [a, b] of [["3.01", "3.1.0"], ["3.01", "3.1"], ["3.01", "3.01.00"], ["3.1.0", "3.01.00"], ["V3.01", "3.1.0"]]) {
+    assert.equal(compareVersions(a, b), 0, a + " / " + b);
+    assert.equal(compareVersions(b, a), 0, b + " / " + a);
+  }
+  /* 3.02 比 3.01 和历史的 3.1.0、3.0.9 都新。 */
+  for (const old of ["3.01", "3.1.0", "3.01.00", "3.0.9", "3.0.8", "3.00", "2.8.0"]) {
+    assert.equal(compareVersions("3.02", old), 1, old);
+    assert.equal(compareVersions(old, "3.02"), -1, old);
+  }
+  /* 历史的 3.0.9：App 段是 0，比 3.01 旧；第 3 段的 9 是老方案的修订号，不会让它比 3.01 新。 */
+  assert.equal(compareVersions("3.0.9", "3.01"), -1);
+  assert.equal(compareVersions("3.01", "3.0.9"), 1);
+  assert.equal(compareVersions("3.0.9", "3.1.0"), -1);
+  /* 老方案的修订号只在两边都是老写法（三段）时才比。 */
+  assert.equal(compareVersions("3.0.9", "3.0.8"), 1);
+  assert.equal(compareVersions("3.0.8", "3.0.9"), -1);
+  assert.equal(compareVersions("3.00", "3.0.9"), 0);
+  /* 第 3 段不算 App 版本：固件段不同的写法对两段的 App 版本没有影响。 */
+  assert.equal(compareVersions("3.01.02", "3.01"), 0);
+  assert.equal(compareVersions("3.01", "3.01.99"), 0);
+  /* 进位：3.99 → 4.00；大版本两位数。 */
+  assert.equal(compareVersions("4.00", "3.99"), 1);
+  assert.equal(compareVersions("10.00", "9.99"), 1);
+  assert.equal(compareVersions("3.10", "3.02"), 1);
+  assert.equal(compareVersions("3.10", "3.1.0"), 1, "3.10 不是 3.1");
+});
+
+test("有没有新 App：3.1.0 和 3.01 是同一个 App 版本，互相不提示；3.02 对它们都是新版", () => {
+  const check = (current, file) => normalizeCheck({ ok: true, current, file, hasNew: true });
+  /* 服务器上是历史的 EVCITY-AC_V3.1.0.apk：装着 3.1.0（老包）或 3.01（新写法的包）都不提示。 */
+  assert.equal(check("3.1.0", "EVCITY-AC_V3.1.0.apk").hasNew, false);
+  assert.equal(check("3.01", "EVCITY-AC_V3.1.0.apk").hasNew, false);
+  /* 传了新写法的 EVCITY-AC_V3.01.apk（同一个 App 版本）：也不提示。 */
+  assert.equal(check("3.1.0", "EVCITY-AC_V3.01.apk").hasNew, false);
+  assert.equal(check("3.01", "EVCITY-AC_V3.01.apk").hasNew, false);
+  /* 发了 3.02：老包、新包都提示，弹窗写新写法的版本。 */
+  assert.deepEqual(check("3.1.0", "EVCITY-AC_V3.02.apk"),
+    { ok: true, reason: "", latest: "3.02", current: "3.1.0", hasNew: true, file: "EVCITY-AC_V3.02.apk" });
+  assert.equal(check("3.01", "EVCITY-AC_V3.02.apk").hasNew, true);
+  assert.equal(check("3.0.9", "EVCITY-AC_V3.02.apk").hasNew, true);
+  /* 老包之间照旧：3.0.9 的手机看到 3.1.0 或 3.01 都提示；3.01 的手机看到 3.0.9 不提示。 */
+  assert.equal(check("3.0.9", "EVCITY-AC_V3.1.0.apk").hasNew, true);
+  assert.equal(check("3.0.9", "EVCITY-AC_V3.01.apk").hasNew, true);
+  assert.equal(check("3.0.8", "EVCITY-AC_V3.0.9.apk").hasNew, true);
+  assert.equal(check("3.01", "EVCITY-AC_V3.0.9.apk").hasNew, false);
+  assert.equal(check("3.1.0", "EVCITY-AC_V3.0.9.apk").hasNew, false);
+  /* 只改固件不出新 APK；就算有人误传了带固件段的名字，也不当成新 App。 */
+  assert.equal(check("3.01", "EVCITY-AC_V3.01.02.apk").hasNew, false);
+  /* 大版本升档。 */
+  assert.equal(check("3.99", "EVCITY-AC_V4.00.apk").hasNew, true);
+});
+
+/* 新方案的第一个版本是 3.02（固件 3.02.01），不是 3.01：已发布的 3.1.0 解析等于 3.01.00，3.02 比它新。
+ * 所以发了这一版 App（EVCITY-AC_V3.02.apk）以后，装着 3.1.0 的手机查更新会提示有新版本，这是预期。 */
+test("新方案的第一个版本 3.02：装着 3.1.0 / 3.0.9 的手机提示有新 App；装着 3.02 的不提示", () => {
+  const check = (current, ...files) => normalizeCheck({ ok: true, current, file: latestApk(files).file, hasNew: false });
+  const server = ["EVCITY-AC_V3.0.9.apk", "EVCITY-AC_V3.1.0.apk", "EVCITY-AC_V3.02.apk"];
+  for (const old of ["3.1.0", "3.01", "3.0.9", "3.0.8"]) {
+    assert.deepEqual(check(old, ...server),
+      { ok: true, reason: "", latest: "3.02", current: old, hasNew: true, file: "EVCITY-AC_V3.02.apk" }, old);
+    assert.equal(compareVersions("3.02", old), 1, old);
+  }
+  /* 已经是 3.02 的：不提示；只改固件（3.02.01 → 3.02.02）不出新 APK，也不会提示。 */
+  assert.equal(check("3.02", ...server).hasNew, false);
+  assert.equal(check("3.02.00", ...server).hasNew, false);
+  /* 发 3.02 之前（服务器上最高还是 3.1.0）：装着 3.1.0 的不提示。 */
+  assert.equal(check("3.1.0", "EVCITY-AC_V3.0.9.apk", "EVCITY-AC_V3.1.0.apk").hasNew, false);
+  /* 仓库现在的 App 版本（读 VERSION；公开镜像仓没有它就不查）不早于 3.02，比历史的 3.1.0 新。 */
+  const repo = repoVersion();
+  if (repo) {
+    assert.ok(compareVersions(repo.app, "3.02") >= 0, "仓库的 App 版本 " + repo.app);
+    assert.equal(compareVersions(repo.app, "3.1.0"), 1);
+    assert.equal(check("3.1.0", "EVCITY-AC_V3.1.0.apk", "EVCITY-AC_V" + repo.app + ".apk").hasNew, true);
+    assert.equal(check(repo.app, "EVCITY-AC_V3.1.0.apk", "EVCITY-AC_V" + repo.app + ".apk").hasNew, false);
+  }
+});
+
+test("目录列表里新老写法混着：取 App 版本最大的；一样大时要新写法的文件", () => {
+  const all = ["EVCITY-AC_V3.0.8.apk", "EVCITY-AC_V3.1.0.apk", "EVCITY-AC_V3.0.9.apk"];
+  assert.deepEqual(latestApk(all), { file: "EVCITY-AC_V3.1.0.apk", version: "3.1.0" });
+  assert.deepEqual(latestApk(all.concat(["EVCITY-AC_V3.01.apk"])), { file: "EVCITY-AC_V3.01.apk", version: "3.01" });
+  assert.deepEqual(latestApk(["EVCITY-AC_V3.01.apk"].concat(all)), { file: "EVCITY-AC_V3.01.apk", version: "3.01" });
+  assert.deepEqual(latestApk(all.concat(["EVCITY-AC_V3.02.apk", "EVCITY-AC_V3.01.apk"])), { file: "EVCITY-AC_V3.02.apk", version: "3.02" });
+  assert.deepEqual(latestApk(["EVCITY-AC_V3.02.apk", "EVCITY-AC_V3.10.apk", "EVCITY-AC_V3.9.9.apk"]), { file: "EVCITY-AC_V3.10.apk", version: "3.10" });
+  assert.equal(apkVersion("EVCITY-AC_V3.01.apk"), "3.01");
+  assert.equal(apkVersion("EVCITY-AC_V10.00.apk"), "10.00");
+  const html = page(row("EVCITY-AC_V3.0.9.apk"), row("EVCITY-AC_V3.1.0.apk"), row("EVCITY-AC_V3.02.apk"));
+  assert.deepEqual(latestApk(parseListing(html)), { file: "EVCITY-AC_V3.02.apk", version: "3.02" });
 });
 
 /* ---- 文件名和目录列表 ---- */
@@ -677,11 +775,18 @@ test("iOS：shim 有 updCheck、没有 updDownload；原生查同一个文件夹
   assert.doesNotMatch(plist, /NSAllowsArbitraryLoads<\/key>\s*<true\/>/);
 });
 
-test("发布脚本：APK 传到「Android APP/」，名字是 EVCITY-AC_V<版本>.apk，测试签名的不传", { skip: !UPLOAD && "没有发布脚本" }, () => {
+test("发布脚本：APK 传到「Android APP/」，名字是 EVCITY-AC_V<大版本.APP版本>.apk（不带固件段），测试签名的不传", { skip: !UPLOAD && "没有发布脚本" }, () => {
   const sh = read(UPLOAD);
   assert.match(sh, /^APK_DIR="Android APP"$/m);
-  assert.match(sh, /^APK_NAME="EVCITY-AC_V\$\{VERSION\}\.apk"$/m);
+  /* 文件名用 App 的版本（zip 版本的前两段，规范写法），不是固件的三段版本。 */
+  assert.match(sh, /^APK_NAME="EVCITY-AC_V\$\{APP_VERSION\}\.apk"$/m);
+  assert.match(sh, /^APP_VERSION="\$\(app_part_of "\$VERSION"\)"$/m);
+  assert.doesNotMatch(sh, /EVCITY-AC_V\$\{VERSION\}\.apk/);
+  /* 只发固件（范围里没有 APP）时不传 APK。 */
+  assert.match(sh, /^if \[\[ "\$SC_APP" -eq 1 && \( "\$PRODUCT" == "AC06" \|\| "\$PRODUCT" == "APP" \) \]\]; then\n  HAS_APK=1$/m);
   assert.match(sh, /测试签名/);
   assert.match(sh, /-F "dir=\$\{APK_DIR\}" -F "file=@\$\{APK_PATH\};filename=\$\{APK_NAME\}"/);
+  /* 脚本传的名字 App 认得出来：新写法两段，历史的三段也认。 */
+  assert.equal(apkVersion("EVCITY-AC_V3.02.apk"), "3.02");
   assert.equal(apkVersion("EVCITY-AC_V3.0.9.apk"), "3.0.9");
 });

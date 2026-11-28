@@ -197,7 +197,18 @@ test("同版的桩（带能力位）：没有提示，全部功能；能力位�
   assert.equal(sentHead(trimmed.app, "SNAPGET").length, 0);
 });
 
-/* 比 App 新一个主版本的固件版本号（App 是 3.1.0 时是 4.0.0）。 */
+/* 版本号是 大版本.APP版本.固件版本：只改固件时只有第 3 段变，不算和 App 版本不同。 */
+test("固件的第 3 段和 App 不同（3.01.02 对 App 3.01）：不提示版本不一致，全部功能", async () => {
+  for (const seg of ["00", "02", "99"]) {
+    const pile = await connect(APP_VERSION + "." + seg, { caps: "1FFF" });
+    await run(5000);
+    assert.ok(!pile.app.text().includes("比 App"), seg);
+    assert.ok(!pile.app.text().includes("没有读到充电桩的固件版本"), seg);
+    assert.ok(sentHead(pile.app, "SNAPGET").length >= 2, seg);
+  }
+});
+
+/* 比 App 新一个主版本的固件版本号（App 是 3.01 时是 4.0.0）。 */
 const NEWER_FW = (Number(APP_VERSION.split(".")[0]) + 1) + ".0.0";
 
 test("比 App 新的桩：写固件比 App 新，App 认识的功能照常用", async () => {
