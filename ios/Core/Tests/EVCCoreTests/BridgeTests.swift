@@ -319,10 +319,10 @@ final class BridgeEventTests: XCTestCase {
 
     func testShimInitAppVersion() {
         let script = ShimInit(locale: "en", gate: [:], mock: false, nativeFilePicker: false,
-                              appVersion: "3.0.9", appBuild: "3009").script
+                              appVersion: "3.1.0", appBuild: "3100").script
         let body = String(script.dropFirst("window.__evcInit = ".count).dropLast(2))
         let object = decode(body)
-        XCTAssertEqual(object["appVersion"] as? String, "3.0.9")
-        XCTAssertEqual(object["appBuild"] as? String, "3009")
+        XCTAssertEqual(object["appVersion"] as? String, "3.1.0")
+        XCTAssertEqual(object["appBuild"] as? String, "3100")
     }
 }

@@ -15,7 +15,7 @@
     { name: "EVC-AC06-0002", addr: "5A1C0002-7E57-4AC6-9F00-000000000002", rssi: -63 },
     { name: "EVC-AC06-0003", addr: "5A1C0003-7E57-4AC6-9F00-000000000003", rssi: -79 }
   ];
-  var FW = "3.0.9";
+  var FW = "3.1.0";
 
   var queue = [];
   var draining = false;

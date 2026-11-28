@@ -654,10 +654,10 @@ test("App.vue：4G 入口在 WiFi 配网下面；4G 页、互斥提示、首页�
   assert.match(script, /if \(line\.indexOf\("WCFG "\) === 0\) \{[\s\S]*?lteHome\.value = null;[\s\S]*?applyWifiConfig/);
 });
 
-test("版本号 3009", () => {
+test("版本号 3100", () => {
   const manifest = read("../AndroidManifest.xml");
-  assert.match(manifest, /android:versionCode="3009"/);
-  assert.match(manifest, /android:versionName="3\.0\.9"/);
+  assert.match(manifest, /android:versionCode="3100"/);
+  assert.match(manifest, /android:versionName="3\.1\.0"/);
 });
 
 /* 一键配置：带 APN（Protocol、APN、账号、密码），不带 4G 开关。 */
