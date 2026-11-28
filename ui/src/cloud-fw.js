@@ -6,9 +6,9 @@
  *   JS → 原生：window.EVC.cloudGet(id, url, kind)   kind = "text"（目录页）| "bin"（固件）
  *   原生 → JS：window.__evcCloud.prog(id, done, total)
  *              window.__evcCloud.done(id, status, bodyBase64, error)   status 0 = 网络错误
- * 原生只放行 http://8.210.219.113:8088/files/...，响应体上限 1 MB。老壳子没有 EVC.cloudGet。 */
+ * 原生只放行 http://ftp.evcity.cc:8088/files/...，响应体上限 1 MB。老壳子没有 EVC.cloudGet。 */
 
-export const CLOUD_BASE = "http://8.210.219.113:8088";
+export const CLOUD_BASE = "http://ftp.evcity.cc:8088";
 export const CLOUD_ROOT = "/files/";
 /* 原生一直不回调时页面自己放弃（原生的连接超时 10 秒、读超时 20 秒；每次进度回调重新计）。 */
 export const CLOUD_TIMEOUT_MS = 45000;

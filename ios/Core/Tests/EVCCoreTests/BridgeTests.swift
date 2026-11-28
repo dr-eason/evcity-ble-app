@@ -149,7 +149,7 @@ final class BridgeCallTests: XCTestCase {
     }
 
     func testCloudGet() {
-        let url = "http://8.210.219.113:8088/files/AC06/"
+        let url = "http://ftp.evcity.cc:8088/files/AC06/"
         XCTAssertEqual(call("cloudGet", ["c1", url, "text"]), .cloudGet(id: "c1", url: url, kind: "text"))
         XCTAssertEqual(call("cloudGet", ["c2", url + "V3.0.9/a.bin", "bin"]),
                        .cloudGet(id: "c2", url: url + "V3.0.9/a.bin", kind: "bin"))
@@ -164,53 +164,60 @@ final class BridgeCallTests: XCTestCase {
     }
 
     func testCloudRulesAllowed() {
-        XCTAssertTrue(CloudRules.allowed(url: "http://8.210.219.113:8088/files/AC06/"))
-        XCTAssertTrue(CloudRules.allowed(url: "http://8.210.219.113:8088/files/M01/V1.0.0/"))
-        XCTAssertTrue(CloudRules.allowed(url: "http://8.210.219.113:8088/files/AC06/V3.0.9/V3.0.9_0093E971.bin"))
+        XCTAssertTrue(CloudRules.allowed(url: "http://ftp.evcity.cc:8088/files/AC06/"))
+        XCTAssertTrue(CloudRules.allowed(url: "http://ftp.evcity.cc:8088/files/M01/V1.0.0/"))
+        XCTAssertTrue(CloudRules.allowed(url: "http://ftp.evcity.cc:8088/files/AC06/V3.0.9/V3.0.9_0093E971.bin"))
         XCTAssertTrue(CloudRules.allowed(
-            url: "http://8.210.219.113:8088/files/AC06/V3.0.9/%E7%89%88%E6%9C%AC%E5%8D%87%E7%BA%A7%E8%AF%B4%E6%98%8E.html"))
-        XCTAssertEqual(CloudRules.url("http://8.210.219.113:8088/files/AC06/V3.0.9/a.bin")?.absoluteString,
-                       "http://8.210.219.113:8088/files/AC06/V3.0.9/a.bin")
+            url: "http://ftp.evcity.cc:8088/files/AC06/V3.0.9/%E7%89%88%E6%9C%AC%E5%8D%87%E7%BA%A7%E8%AF%B4%E6%98%8E.html"))
+        XCTAssertEqual(CloudRules.url("http://ftp.evcity.cc:8088/files/AC06/V3.0.9/a.bin")?.absoluteString,
+                       "http://ftp.evcity.cc:8088/files/AC06/V3.0.9/a.bin")
+        XCTAssertEqual(CloudRules.host, "ftp.evcity.cc")
+        XCTAssertEqual(CloudRules.port, 8088)
     }
 
     func testCloudRulesBlocked() {
         let bad = [
             "",
-            "https://8.210.219.113:8088/files/AC06/",
-            "HTTP://8.210.219.113:8088/files/AC06/",
-            "ftp://8.210.219.113:8088/files/AC06/",
+            "https://ftp.evcity.cc:8088/files/AC06/",
+            "HTTP://ftp.evcity.cc:8088/files/AC06/",
+            "ftp://ftp.evcity.cc:8088/files/AC06/",
             "file:///files/AC06/",
-            "http://8.210.219.113/files/AC06/",
-            "http://8.210.219.113:80/files/AC06/",
-            "http://8.210.219.113:8089/files/AC06/",
+            "http://ftp.evcity.cc/files/AC06/",
+            "http://ftp.evcity.cc:80/files/AC06/",
+            "http://ftp.evcity.cc:8089/files/AC06/",
             "http://example.com:8088/files/AC06/",
-            "http://8.210.219.113.example.com:8088/files/AC06/",
-            "http://8.210.219.113:8088@example.com/files/AC06/",
-            "http://user:pass@8.210.219.113:8088/files/AC06/",
-            "http://user@8.210.219.113:8088/files/AC06/",
-            "http://8.210.219.113:8088",
-            "http://8.210.219.113:8088/",
-            "http://8.210.219.113:8088/files",
-            "http://8.210.219.113:8088/file/AC06/",
-            "http://8.210.219.113:8088/upload/files/",
-            "http://8.210.219.113:8088/files/../etc/passwd",
-            "http://8.210.219.113:8088/files/AC06/..",
-            "http://8.210.219.113:8088/files/%2e%2e/secret",
-            "http://8.210.219.113:8088/files/AC06/%2E./x",
-            "http://8.210.219.113:8088/files/AC06/..%2Fx",
-            "http://8.210.219.113:8088\\@example.com/files/",
-            "http://8.210.219.113:8088/files/a\\..\\b",
-            "http://8.210.219.113:8088/files/a b",
-            "http://8.210.219.113:8088/files/a\nb",
-            " http://8.210.219.113:8088/files/AC06/",
-            "8.210.219.113:8088/files/AC06/",
+            // 旧的 IP 地址：换成域名以后不再放行。
+            "http://8.210.219.113:8088/files/AC06/",
+            "http://8.210.219.113:8088/files/AC06/V3.0.9/V3.0.9_0093E971.bin",
+            "http://sub.ftp.evcity.cc:8088/files/AC06/",
+            "http://evcity.cc:8088/files/AC06/",
+            "http://ftp.evcity.cc.example.com:8088/files/AC06/",
+            "http://ftp.evcity.cc:8088@example.com/files/AC06/",
+            "http://user:pass@ftp.evcity.cc:8088/files/AC06/",
+            "http://user@ftp.evcity.cc:8088/files/AC06/",
+            "http://ftp.evcity.cc:8088",
+            "http://ftp.evcity.cc:8088/",
+            "http://ftp.evcity.cc:8088/files",
+            "http://ftp.evcity.cc:8088/file/AC06/",
+            "http://ftp.evcity.cc:8088/upload/files/",
+            "http://ftp.evcity.cc:8088/files/../etc/passwd",
+            "http://ftp.evcity.cc:8088/files/AC06/..",
+            "http://ftp.evcity.cc:8088/files/%2e%2e/secret",
+            "http://ftp.evcity.cc:8088/files/AC06/%2E./x",
+            "http://ftp.evcity.cc:8088/files/AC06/..%2Fx",
+            "http://ftp.evcity.cc:8088\\@example.com/files/",
+            "http://ftp.evcity.cc:8088/files/a\\..\\b",
+            "http://ftp.evcity.cc:8088/files/a b",
+            "http://ftp.evcity.cc:8088/files/a\nb",
+            " http://ftp.evcity.cc:8088/files/AC06/",
+            "ftp.evcity.cc:8088/files/AC06/",
             "/files/AC06/",
         ]
         for text in bad {
             XCTAssertFalse(CloudRules.allowed(url: text), text)
             XCTAssertNil(CloudRules.url(text), text)
         }
-        XCTAssertFalse(CloudRules.allowed(url: "http://8.210.219.113:8088/files/" + String(repeating: "a", count: 2048)))
+        XCTAssertFalse(CloudRules.allowed(url: "http://ftp.evcity.cc:8088/files/" + String(repeating: "a", count: 2048)))
     }
 
     func testCloudScripts() {
@@ -319,10 +326,10 @@ final class BridgeEventTests: XCTestCase {
 
     func testShimInitAppVersion() {
         let script = ShimInit(locale: "en", gate: [:], mock: false, nativeFilePicker: false,
-                              appVersion: "3.02", appBuild: "30200").script
+                              appVersion: "3.03", appBuild: "30300").script
         let body = String(script.dropFirst("window.__evcInit = ".count).dropLast(2))
         let object = decode(body)
-        XCTAssertEqual(object["appVersion"] as? String, "3.02")
-        XCTAssertEqual(object["appBuild"] as? String, "30200")
+        XCTAssertEqual(object["appVersion"] as? String, "3.03")
+        XCTAssertEqual(object["appBuild"] as? String, "30300")
     }
 }

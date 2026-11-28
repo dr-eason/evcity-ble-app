@@ -23,6 +23,8 @@ mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
 const here = dirname(fileURLToPath(import.meta.url));
 const ui = resolve(here, "..");
 const read = (path) => readFileSync(path, "utf8");
+/* OTA 文件站原来写死的 IP；现在只认域名 ftp.evcity.cc，下面核对它不再出现。 */
+const OLD_IP = "8.210.219.113";
 const pick = (...paths) => paths.map((p) => resolve(ui, p)).find((p) => existsSync(p)) || "";
 const IOS = pick("../ios");
 const ANDROID = pick("../android/src/com/evcity/acv2/AppUpdater.java") ? resolve(ui, "../android") : "";
@@ -708,7 +710,9 @@ test("Android：桥、清单、下载目录、只读 provider", { skip: !ANDROID
     assert.ok(main.includes("@JavascriptInterface\n        public void " + name), name);
   }
   const upd = read(resolve(ANDROID, "src/com/evcity/acv2/AppUpdater.java"));
-  assert.ok(upd.includes('"http://8.210.219.113:8088/files/Android%20APP/"'));
+  assert.ok(upd.includes('"http://ftp.evcity.cc:8088/files/Android%20APP/"'));
+  assert.ok(!(upd + main).includes(OLD_IP), "旧 IP 不再用");
+  assert.match(main, /CLOUD_HOST = "ftp\.evcity\.cc";/);
   assert.ok(upd.includes('Pattern.compile("^EVCITY-AC_V(\\\\d+(?:\\\\.\\\\d+)*)\\\\.apk$")'), "文件名规则和 JS 一样");
   assert.match(upd, /CHECK_TIMEOUT_MS = 8000/);
   assert.match(upd, /getExternalCacheDir\(\)/);
@@ -731,7 +735,9 @@ test("Android：桥、清单、下载目录、只读 provider", { skip: !ANDROID
   assert.match(manifest, /<provider\s+android:name="\.UpdateFileProvider"\s+android:authorities="com\.evcity\.acv2\.updatefiles"\s+android:exported="false"\s+android:grantUriPermissions="true" \/>/);
   assert.match(manifest, /android:networkSecurityConfig="@xml\/network_security_config"/);
   const net = read(resolve(ANDROID, "res/xml/network_security_config.xml"));
-  assert.match(net, /<domain-config cleartextTrafficPermitted="true">\s*<domain includeSubdomains="false">8\.210\.219\.113<\/domain>/);
+  assert.match(net, /<domain-config cleartextTrafficPermitted="true">\s*<domain includeSubdomains="false">ftp\.evcity\.cc<\/domain>/);
+  assert.equal((net.match(/<domain /g) || []).length, 1, "明文例外只有这一个域名");
+  assert.ok(!net.includes(OLD_IP), "旧 IP 不再放行明文");
   assert.doesNotMatch(net, /<base-config[^>]*cleartextTrafficPermitted="true"/);
   for (const script of ["build.sh", "build.ps1"]) {
     const text = read(resolve(ANDROID, script));
@@ -756,7 +762,9 @@ test("iOS：shim 有 updCheck、没有 updDownload；原生查同一个文件夹
   win.EVC.updCheck();
   assert.deepEqual(posted, [{ m: "updCheck", a: [] }]);
   const rules = read(resolve(IOS, "Core/Sources/EVCCore/AppUpdate.swift"));
-  assert.ok(rules.includes('"http://8.210.219.113:8088/files/Android%20APP/"'));
+  assert.ok(rules.includes('"http://ftp.evcity.cc:8088/files/Android%20APP/"'));
+  assert.ok(!rules.includes(OLD_IP), "旧 IP 不再用");
+  assert.match(read(resolve(IOS, "Core/Sources/EVCCore/Bridge.swift")), /enum CloudRules \{\s*public static let host = "ftp\.evcity\.cc"\s*public static let port = 8088/);
   assert.ok(rules.includes("`^EVCITY-AC_V(\\d+(?:\\.\\d+)*)\\.apk$`"), "文件名规则和 JS 一样");
   assert.match(rules, /apkPrefix = "EVCITY-AC_V"/);
   assert.match(rules, /apkSuffix = "\.apk"/);
@@ -771,7 +779,8 @@ test("iOS：shim 有 updCheck、没有 updDownload；原生查同一个文件夹
   const vc = read(resolve(IOS, "App/Sources/MainViewController.swift"));
   assert.match(vc, /AppUpdateRules\.isCheckCall\(message\.body\)/);
   const plist = read(resolve(IOS, "App/Resources/Info.plist"));
-  assert.match(plist, /<key>NSAppTransportSecurity<\/key>\s*<dict>\s*<key>NSExceptionDomains<\/key>\s*<dict>[^]*?<key>8\.210\.219\.113<\/key>\s*<dict>[^]*?<key>NSExceptionAllowsInsecureHTTPLoads<\/key>\s*<true\/>/);
+  assert.match(plist, /<key>NSAppTransportSecurity<\/key>\s*<dict>\s*<key>NSExceptionDomains<\/key>\s*<dict>[^]*?<key>ftp\.evcity\.cc<\/key>\s*<dict>[^]*?<key>NSExceptionAllowsInsecureHTTPLoads<\/key>\s*<true\/>/);
+  assert.ok(!plist.includes(OLD_IP), "旧 IP 的 ATS 例外已去掉");
   assert.doesNotMatch(plist, /NSAllowsArbitraryLoads<\/key>\s*<true\/>/);
 });
 

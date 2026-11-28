@@ -204,7 +204,7 @@ public enum ExportRules {
 /// 云端固件（AC-33）的联网限制：只能 GET 固件服务器 /files/ 下面的东西，免得这个桥变成任意联网接口。
 /// 和 Android 的 MainActivity.cloudUrl 同一套规则。
 public enum CloudRules {
-    public static let host = "8.210.219.113"
+    public static let host = "ftp.evcity.cc"
     public static let port = 8088
     public static let pathPrefix = "/files/"
     /// 响应体上限（text 和 bin 一样），超过就中止，按 "too large" 回页面。

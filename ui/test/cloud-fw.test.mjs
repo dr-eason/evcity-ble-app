@@ -162,7 +162,9 @@ test("href：只认 /files/ 下的绝对路径，不带 ..，要在指定目录�
   assert.ok(!hrefOk(""));
   assert.equal(cloudDir("ac06"), "AC06");
   assert.equal(cloudDir("m01"), "M01");
-  assert.equal(cloudUrl(cloudDirPath("ac06")), "http://8.210.219.113:8088/files/AC06/");
+  assert.equal(CLOUD_BASE, "http://ftp.evcity.cc:8088");
+  assert.equal(cloudUrl(cloudDirPath("ac06")), "http://ftp.evcity.cc:8088/files/AC06/");
+  assert.ok(!cloudUrl(cloudDirPath("ac06")).includes("8.210.219.113"), "旧 IP 不再用");
   assert.equal(cloudUrl(cloudDirPath("m01")), CLOUD_BASE + "/files/M01/");
 });
 
@@ -287,9 +289,9 @@ test("cloudGet：按 id 对回调，进度、完成、状态码和字节都带�
   const { win, calls } = fakeWin();
   assert.ok(cloudSupported(win));
   const seen = [];
-  const job = cloudGet("http://8.210.219.113:8088/files/AC06/V3.0.9/a.bin", "bin", { win, onProgress: (d, t) => seen.push([d, t]) });
+  const job = cloudGet("http://ftp.evcity.cc:8088/files/AC06/V3.0.9/a.bin", "bin", { win, onProgress: (d, t) => seen.push([d, t]) });
   assert.equal(calls.length, 1);
-  assert.deepEqual([calls[0].id, calls[0].url, calls[0].kind], [job.id, "http://8.210.219.113:8088/files/AC06/V3.0.9/a.bin", "bin"]);
+  assert.deepEqual([calls[0].id, calls[0].url, calls[0].kind], [job.id, "http://ftp.evcity.cc:8088/files/AC06/V3.0.9/a.bin", "bin"]);
   assert.equal(typeof win.__evcCloud.done, "function");
   assert.equal(typeof win.__evcCloud.prog, "function");
   /* 别的 id 的回调不理。 */
@@ -590,14 +592,14 @@ test("组件：选版本 → 选文件 → 确认 → 下载（进度）→ 校�
   assert.equal(ui.requests.length, 0);
 
   await ui.click("cloud-open");
-  assert.deepEqual([ui.last().url, ui.last().kind], ["http://8.210.219.113:8088/files/AC06/", "text"]);
+  assert.deepEqual([ui.last().url, ui.last().kind], ["http://ftp.evcity.cc:8088/files/AC06/", "text"]);
   assert.match(ui.text(), /正在读取云端固件列表/);
   await ui.done(ui.last(), 200, versionsPage);
   assert.match(ui.text(), /选择版本/);
   assert.deepEqual(ui.buttons("cloud-version").map(textOf), ["V3.0.9", "V3.0.8"]);
 
   await ui.click("cloud-version", 0);
-  assert.deepEqual([ui.last().url, ui.last().kind], ["http://8.210.219.113:8088/files/AC06/V3.0.9/", "text"]);
+  assert.deepEqual([ui.last().url, ui.last().kind], ["http://ftp.evcity.cc:8088/files/AC06/V3.0.9/", "text"]);
   await ui.done(ui.last(), 200, filesPage);
   /* 只有 .bin；显示文件名、大小、版本、CRC。 */
   assert.equal(ui.buttons("cloud-file").length, 1);
@@ -618,7 +620,7 @@ test("组件：选版本 → 选文件 → 确认 → 下载（进度）→ 校�
   /* 确定 → 下载。 */
   await ui.click("cloud-file", 0);
   await ui.click("cloud-yes");
-  assert.deepEqual([ui.last().url, ui.last().kind], ["http://8.210.219.113:8088/files/AC06/V3.0.9/" + FW_NAME, "bin"]);
+  assert.deepEqual([ui.last().url, ui.last().kind], ["http://ftp.evcity.cc:8088/files/AC06/V3.0.9/" + FW_NAME, "bin"]);
   assert.match(ui.text(), /正在下载 0%/);
   assert.ok(ui.buttons("cloud-open")[0].props.disabled);
   await ui.prog(ui.last(), 1024, 4096);
@@ -687,7 +689,7 @@ test("组件：目录 404 / 没有版本 / 没有 .bin / 网络失败（带重�
   /* M01：读 M01/；目录在但没有版本文件夹。 */
   ui = await mount("m01");
   await ui.click("cloud-open");
-  assert.equal(ui.last().url, "http://8.210.219.113:8088/files/M01/");
+  assert.equal(ui.last().url, "http://ftp.evcity.cc:8088/files/M01/");
   await ui.done(ui.last(), 200, page([row("/files/M01/readme.txt", "readme.txt", "1 KB")]));
   assert.equal(textOf(ui.byClass("cloud-note")[0]), "云端还没有 M01 固件");
   ui.unmount();
@@ -700,14 +702,14 @@ test("组件：目录 404 / 没有版本 / 没有 .bin / 网络失败（带重�
   assert.equal(textOf(ui.buttons("cloud-retry")[0]), "重试");
   await ui.click("cloud-retry");
   assert.equal(ui.requests.length, 2);
-  assert.equal(ui.last().url, "http://8.210.219.113:8088/files/AC06/");
+  assert.equal(ui.last().url, "http://ftp.evcity.cc:8088/files/AC06/");
   await ui.done(ui.last(), 500, "oops");
   assert.equal(textOf(ui.byClass("cloud-note")[0]), "服务器返回 500");
   await ui.click("cloud-retry");
   await ui.done(ui.last(), 200, versionsPage);
   /* 版本里没有 .bin：能返回去选别的版本。 */
   await ui.click("cloud-version", 1);
-  assert.equal(ui.last().url, "http://8.210.219.113:8088/files/AC06/V3.0.8/");
+  assert.equal(ui.last().url, "http://ftp.evcity.cc:8088/files/AC06/V3.0.8/");
   await ui.done(ui.last(), 200, page([row("/files/AC06/V3.0.8/a.zip", "a.zip", "4.7 MB")]));
   assert.equal(textOf(ui.byClass("cloud-note")[0]), "这个版本里没有可用的固件文件");
   await ui.click("cloud-back");
@@ -717,7 +719,7 @@ test("组件：目录 404 / 没有版本 / 没有 .bin / 网络失败（带重�
   await ui.done(ui.last(), 0, null, "connect");
   assert.equal(textOf(ui.byClass("cloud-note")[0]), "无法连接服务器，请检查手机网络后重试");
   await ui.click("cloud-retry");
-  assert.equal(ui.last().url, "http://8.210.219.113:8088/files/AC06/V3.0.9/");
+  assert.equal(ui.last().url, "http://ftp.evcity.cc:8088/files/AC06/V3.0.9/");
   ui.unmount();
 
   /* 老壳子：不发请求，直接提示。 */

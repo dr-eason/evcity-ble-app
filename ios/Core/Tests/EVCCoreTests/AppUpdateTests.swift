@@ -119,6 +119,8 @@ final class AppUpdateTests: XCTestCase {
         let script = AppUpdateRules.script(AppUpdateRules.failure("offline"))
         XCTAssertTrue(script.hasPrefix("window.__evcUpd&&window.__evcUpd.onCheck&&window.__evcUpd.onCheck({"))
         XCTAssertTrue(script.contains("\"reason\":\"offline\""))
-        XCTAssertEqual(AppUpdateRules.listURL, "http://8.210.219.113:8088/files/Android%20APP/")
+        XCTAssertEqual(AppUpdateRules.listURL, "http://ftp.evcity.cc:8088/files/Android%20APP/")
+        // 旧的 IP 地址不再用。
+        XCTAssertFalse(AppUpdateRules.listURL.contains("8.210.219.113"))
     }
 }

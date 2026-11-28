@@ -18,7 +18,7 @@ import Foundation
 ///   或 `{ok:false, reason:"offline"|"http"|"parse"}`。文件夹还不存在（HTTP 404 / 410）和空文件夹一样回
 ///   `ok:true`、`latest ""`、`hasNew false`（手动查显示「已是最新版本」）；`"http"` 只指别的状态码。
 public enum AppUpdateRules {
-    public static let listURL = "http://8.210.219.113:8088/files/Android%20APP/"
+    public static let listURL = "http://ftp.evcity.cc:8088/files/Android%20APP/"
     public static let apkPrefix = "EVCITY-AC_V"
     public static let apkSuffix = ".apk"
     /// 查询超时（秒），和 Android 一样。
