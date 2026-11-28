@@ -313,8 +313,8 @@ final class BridgeEventTests: XCTestCase {
         XCTAssertEqual(object["mock"] as? Bool, true)
         XCTAssertEqual(object["nativeFilePicker"] as? Bool, false)
         // 没给版本号时是空串，界面再用编译时的版本兜底。
-        XCTAssertEqual(object["appVersion"] as? String, "3.02")
-        XCTAssertEqual(object["appBuild"] as? String, "30200")
+        XCTAssertEqual(object["appVersion"] as? String, "")
+        XCTAssertEqual(object["appBuild"] as? String, "")
     }
 
     func testShimInitAppVersion() {
