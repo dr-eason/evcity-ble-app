@@ -1,6 +1,6 @@
 /* 屏幕颜色设置（SCRTHEMEGET / SCRTHEMESET）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/scrtheme.test.mjs
+ *     node --test APP/ui/test/scrtheme.test.mjs
  *
  * 假桩按固件 wb2.c 的规则应答；旧固件对这两条一声不吭。 */
 import test from "node:test";
@@ -20,7 +20,7 @@ import { parseAuthLine, resendable } from "../src/auth.js";
 import { SETTINGS_GROUPS } from "../src/tabs.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("七种颜色，顺序、默认值和颜色跟固件、屏幕工具一样", () => {
@@ -41,9 +41,9 @@ test("七种颜色，顺序、默认值和颜色跟固件、屏幕工具一样",
   try {
     const code = "import sys, json; sys.path.insert(0, sys.argv[1]); import theme_pages as tp; " +
       "print(json.dumps([list(tp.NAMES), [list(c) for c in tp.RGB], tp.DEFAULT, list(tp.NAMES_ZH)]))";
-    tool = JSON.parse(execFileSync("python3", ["-c", code, resolve(root, "文档/迪文屏/工具")], { encoding: "utf8" }));
+    tool = JSON.parse(execFileSync("python3", ["-c", code, resolve(root, "AC06/文档/迪文屏/工具")], { encoding: "utf8" }));
   } catch (error) {
-    const text = read("文档/迪文屏/工具/theme_pages.py");
+    const text = read("AC06/文档/迪文屏/工具/theme_pages.py");
     assert.match(text, /NAMES = \("red", "orange", "yellow", "green", "cyan", "blue", "purple"\)/);
     return;
   }
@@ -172,7 +172,7 @@ test("12 种语言的文案都齐，不是中文键、也不是英文原样", ()
 });
 
 test("App.vue：屏幕颜色页、菜单、提示用到的字符串在每种语言里都有", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   const block = vue.match(/<section v-else-if="page === 'scrtheme'"[\s\S]*?<\/section>/);
   assert.ok(block, "App.vue 里没有屏幕颜色页");
   const used = new Set(["屏幕颜色", "充电桩屏幕充电界面的配色"]);

@@ -1,6 +1,6 @@
 /* 设置里改并充（src/par-switch.js）：先无条件停掉全部充电，等每一路都停下，再切换并充，读回核对。
  *
- *     node --test M01/tools/ble-finder/ui/test/par-switch.test.mjs
+ *     node --test APP/ui/test/par-switch.test.mjs
  *
  * 用一台假的桩：10 路，状态字母和固件一样（C 充电中、S 暂停输出、F 结束中约 1 秒、P 空闲）；
  * STOP⇥0 只停在充的（gap 不为 0 时像新固件一样逐路停：端口号从小到大每 gap 毫秒停一路，

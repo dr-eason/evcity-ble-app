@@ -1,6 +1,6 @@
 /* 固件分区布局（3.0.0，B 方案）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/fw-layout.test.mjs
+ *     node --test APP/ui/test/fw-layout.test.mjs
  *
  * App 要认出文件是老分区（L1）还是新板（L2）的固件，认出桩是哪一种（OTAPREP 应答后面的
  * "L2"），对不上不发。老分区（L1）已经退役、不再发布 L1 的包，但现场还有 L1 的桩和残留的 L1
@@ -19,7 +19,7 @@ import { languages, translate } from "../src/i18n.js";
 import { layoutPacks } from "../src/packs-layout.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 function put(bytes, offset, value) {
@@ -130,7 +130,7 @@ test("数字和固件的分区表一致", () => {
 });
 
 test("App.vue 用 fw-layout.js 判断文件，不再只认老分区", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   assert.ok(!/firmwareLooksValid/.test(vue));
   assert.match(vue, /firmwareLayout\(image\)/);
   assert.match(vue, /layoutMismatchNote\(otaFileLayout\.value, pileLayoutFrom\(line\)\)/);

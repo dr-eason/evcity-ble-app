@@ -9,7 +9,7 @@
  * 充电桩照样收、照样存，屏幕不变色，重烧以后生效。
  *
  * SCREEN_THEMES 的顺序和颜色跟固件 screen.c（THEME_ 开头的宏）、
- * 文档/迪文屏/工具/theme_pages.py 的 NAMES / RGB 一样，test/scrtheme.test.mjs 逐项比对。
+ * AC06/文档/迪文屏/工具/theme_pages.py 的 NAMES / RGB 一样，test/scrtheme.test.mjs 逐项比对。
  * name 是中文的键，界面上用 t() 翻译。 */
 
 export const SCREEN_THEMES = [

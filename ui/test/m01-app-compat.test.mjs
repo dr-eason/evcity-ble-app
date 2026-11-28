@@ -4,7 +4,7 @@
  * 新 App 连各版固件：把真的 App.vue 在 node 里跑起来（helpers/mount-app.mjs），对面是按各版
  * 规矩应答的模拟桩（helpers/fw-versions.mjs），从扫描、连接、核对密码一路走到首页和设置页。
  *
- *     node --test M01/tools/ble-finder/ui/test/app-compat.test.mjs
+ *     node --test APP/ui/test/app-compat.test.mjs
  *
  * 看的是：App 从不给老固件发它不认的命令；首页、菜单上的提示；充电规则、并充、广播诊断、
  * OCPP wss://、搜索热点在老固件上的回退；读不到版本时按最老的处理；固件比 App 新。 */
@@ -143,7 +143,8 @@ test(version + " 的桩（没有能力位）：首页用快照，三个参数的
   const { app, unknown } = await connect(version);
   await run(5000);
   assert.ok(sentHead(app, "SNAPGET").length >= 2);
-  assert.ok(app.text().includes("充电桩固件 " + version + " 比 App " + APP_VERSION + " 旧"));
+  /* 版本号比 App 旧：能力表里的项按版本号它都有，功能照常用，首页照样写"比 App 旧"。 */
+  assert.ok(app.text().includes("充电桩固件 " + version + " 比 App " + APP_VERSION + " 旧，有些功能用不了。可以在“固件升级”里升级"));
   await openMenu(app);
   app.click("充电规则");
   await run(4000);
@@ -162,6 +163,28 @@ test(version + " 的桩（没有能力位）：首页用快照，三个参数的
 });
 }
 
+/* 3.1.0 起 M01 和 AC06、App 统一版本号：现场 1.3.4～1.3.6 的 M01 固件比 App 旧很多，能力位是全的。
+ * 版本号和 App 不同一律提示，没有例外；能力位只管功能能不能用。 */
+for (const version of ["1.3.4", "1.3.6"]) {
+test("版本号比 App 旧、能力位齐全的桩（" + version + "）：照样提示比 App 旧，全部功能可用", async () => {
+  const full = await connect(version, { caps: "1FFF" });
+  await run(5000);
+  assert.ok(sentHead(full.app, "SNAPGET").length >= 2);
+  assert.ok(full.app.text().includes("充电桩固件 " + version + " 比 App " + APP_VERSION + " 旧，有些功能用不了。可以在“固件升级”里升级"));
+  await openMenu(full.app);
+  assert.ok(full.app.text().includes("充电桩固件 " + version + " 比 App " + APP_VERSION + " 旧"));
+  assert.ok(!full.app.text().includes("需升级固件"));
+  assert.deepEqual(full.unknown(), []);
+});
+}
+
+test("版本号比 App 旧、能力位缺一项的桩（1.3.6）：提示比 App 旧，缺的功能不用", async () => {
+  const trimmed = await connect("1.3.6", { caps: (0x1FFF & ~(1 << 10)).toString(16).toUpperCase() });
+  await run(5000);
+  assert.equal(sentHead(trimmed.app, "SNAPGET").length, 0);
+  assert.ok(trimmed.app.text().includes("充电桩固件 1.3.6 比 App " + APP_VERSION + " 旧"));
+});
+
 test("同版的桩（带能力位）：没有提示，全部功能；能力位说没有的照样不发", async () => {
   const same = await connect(APP_VERSION, { caps: "1FFF" });
   await run(5000);
@@ -174,10 +197,13 @@ test("同版的桩（带能力位）：没有提示，全部功能；能力位�
   assert.equal(sentHead(trimmed.app, "SNAPGET").length, 0);
 });
 
+/* 比 App 新一个主版本的固件版本号（App 是 3.1.0 时是 4.0.0）。 */
+const NEWER_FW = (Number(APP_VERSION.split(".")[0]) + 1) + ".0.0";
+
 test("比 App 新的桩：写固件比 App 新，App 认识的功能照常用", async () => {
-  const { app, unknown } = await connect("1.4.0", { caps: "3FFF" });
+  const { app, unknown } = await connect(NEWER_FW, { caps: "3FFF" });
   await run(5000);
-  assert.ok(app.text().includes("充电桩固件 1.4.0 比 App " + APP_VERSION + " 新。新加的功能要更新 App 才能用"));
+  assert.ok(app.text().includes("充电桩固件 " + NEWER_FW + " 比 App " + APP_VERSION + " 新。新加的功能要更新 App 才能用"));
   assert.ok(sentHead(app, "SNAPGET").length >= 2);
   await openMenu(app);
   assert.ok(!app.text().includes("需升级固件"));

@@ -1,6 +1,6 @@
 /* 首页 WiFi 那一行的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 信号强度在每秒的 ACK SYS 行里（ports.js 的 parseSys），这里测显示规则。 */
 import test from "node:test";

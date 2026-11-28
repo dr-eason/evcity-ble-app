@@ -11,7 +11,7 @@
  *   - “一次性、已经执行过”的预约原样写回会被重新排上，所以这种情况写成“关闭”。
  *
  * TZ_ZONES 和迪文屏 S2.9 时区页是同一张表：固件 app/src/screen.c 的 s_tz_list[]、
- * 文档/迪文屏/工具/tz_zones.py 的 ZONES。三份由 test/tz.test.mjs 逐项比对。 */
+ * AC06/文档/迪文屏/工具/tz_zones.py 的 ZONES。三份由 test/tz.test.mjs 逐项比对。 */
 
 export const TZ_ZONES = [
   -720, -660, -600, -570, -540, -480,

@@ -9,7 +9,7 @@
  * 用法（不需要 npm install，只用 Node 22+ 自带的 WebSocket）：
  *   node tools/mock-web/shots.mjs [输出目录] [index.html]
  * 默认输出到 tools/mock-web/out/，index.html 依次找：
- *   App/Resources/Web/index.html、../ble-finder/assets/index.html、../assets/index.html
+ *   App/Resources/Web/index.html、../android/assets/index.html、../assets/index.html
  * Chrome 的位置用环境变量 CHROME 指定，默认 google-chrome。 */
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -23,7 +23,7 @@ const outDir = resolve(process.argv[2] || join(here, "out"));
 const page = [
   process.argv[3],
   join(ios, "App/Resources/Web/index.html"),
-  join(ios, "../ble-finder/assets/index.html"),
+  join(ios, "../android/assets/index.html"),
   join(ios, "../assets/index.html"),
 ].filter(Boolean).map((p) => resolve(p)).find((p) => existsSync(p));
 if (!page) {

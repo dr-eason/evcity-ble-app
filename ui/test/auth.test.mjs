@@ -1,6 +1,6 @@
 /* 蓝牙鉴权应答（固件 2.7.2）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/auth.test.mjs
+ *     node --test APP/ui/test/auth.test.mjs
  *
  * 假桩按固件 wb2.c 里 ble_handle_command() / ble_auth_try() 的规则应答：没通过 AUTH 时
  * 只认 HB、AUTH、STATUS，别的回 "ACK <命令名> AUTH"；连续输错 5 次锁 60 秒，期间回
@@ -18,7 +18,7 @@ import { languages, translate } from "../src/i18n.js";
 import { authPacks } from "../src/packs-auth.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 /* ---------------------------------------------------------------- 应答的格式 */
@@ -458,7 +458,7 @@ test("密码页原有的文案各语言也都在", () => {
 /* ---------------------------------------------------------------- 界面的接法、版本号 */
 
 test("App.vue：鉴权应答最先处理，不再按子串认密码不对", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   const script = vue.slice(vue.indexOf("<script setup>"));
   /* applyLine 的第一句。排在 otaWait、parseTimeAck、parseLteAck 这些前面。 */
   assert.match(script, /function applyLine\(line\) \{\n  if \(applyAuthLine\(line\)\) return;/);
@@ -482,28 +482,23 @@ test("App.vue：鉴权应答最先处理，不再按子串认密码不对", () =
 });
 
 test("编好的界面里有新文案（assets/index.html 是用这份源码编的）", () => {
-  const html = read("AC06/tools/ble-finder/assets/index.html");
+  const html = read("APP/android/assets/index.html");
   assert.ok(html.includes("Too many wrong passwords. Locked: try again in {s} s"));
   assert.ok(html.includes("已锁定（{s} 秒）"));
   assert.ok(html.includes("ACK\\\\s+AUTH\\\\s+LOCKED") || html.includes("AUTH\\s+LOCKED"));
 });
 
-test("版本号 3.1.0 / 3100：安卓", () => {
-  const manifest = read("AC06/tools/ble-finder/AndroidManifest.xml");
-  assert.match(manifest, /android:versionCode="3100"/);
-  assert.match(manifest, /android:versionName="3\.1\.0"/);
-});
-
-/* iOS 的 Config/Base.xcconfig 和固件的 app_config.h 不归 App 这边改（2.8.0 的 App 改动只动
- * ble-finder；3.0.0 起三处一起升）。两边还没跟上时这两条记为 todo，不让整套测试失败；跟上以后就是普通的断言。 */
-const iosConf = (() => { try { return read("AC06/tools/ble-ios/Config/Base.xcconfig"); } catch (e) { return ""; } })();
-const iosSynced = /^EVC_VERSION = 3\.1\.0$/m.test(iosConf) && /^EVC_BUILD = 3100$/m.test(iosConf);
-test("版本号 3.1.0 / 3100：iOS 和安卓一致", { todo: iosSynced ? false : "ble-ios/Config/Base.xcconfig 还没升到 3.1.0 / 3100" }, () => {
-  assert.match(iosConf, /^EVC_VERSION = 3\.1\.0$/m);
-  assert.match(iosConf, /^EVC_BUILD = 3100$/m);
-});
-const fwConf = (() => { try { return read("AC06/user/inc/app_config.h"); } catch (e) { return ""; } })();
-const fwSynced = /#define AC06_FW_VERSION\s+"3\.1\.0"/.test(fwConf);
-test("版本号 3.1.0：固件和 App 一致", { todo: fwSynced ? false : "固件 AC06_FW_VERSION 还没升到 3.1.0" }, () => {
-  assert.match(fwConf, /#define AC06_FW_VERSION\s+"3\.1\.0"/);
+/* 版本号不写死在测试里：AC06 固件、M01 固件、安卓、iOS 都等于仓库根的 VERSION（tools/version/set_version.py
+ * 一次改全，check_version.py 核对；完整的核对在 version-sync.test.mjs）。这里只看和鉴权同一批发布的三处。 */
+const unified = (() => { try { return read("VERSION").trim(); } catch (e) { return ""; } })();
+const unifiedCode = String(unified.split(".").reduce((code, part, i) => code + Number(part) * [1000, 100, 1][i], 0));
+test("版本号等于仓库根的 VERSION：安卓、iOS、AC06 固件", { skip: unified ? false : "不在 AC-V2 单仓里（没有 VERSION）" }, () => {
+  assert.match(unified, /^\d\.\d\.\d$/);
+  const manifest = read("APP/android/AndroidManifest.xml");
+  assert.equal(/android:versionName="([^"]+)"/.exec(manifest)[1], unified);
+  assert.equal(/android:versionCode="([^"]+)"/.exec(manifest)[1], unifiedCode);
+  const iosConf = read("APP/ios/Config/Base.xcconfig");
+  assert.equal(/^EVC_VERSION = (.+)$/m.exec(iosConf)[1], unified);
+  assert.equal(/^EVC_BUILD = (.+)$/m.exec(iosConf)[1], unifiedCode);
+  assert.equal(/#define AC06_FW_VERSION\s+"([^"]+)"/.exec(read("AC06/user/inc/app_config.h"))[1], unified);
 });

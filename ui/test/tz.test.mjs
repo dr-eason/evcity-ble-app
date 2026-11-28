@@ -1,6 +1,6 @@
 /* 时区设置（2.6.14）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 假桩按固件 wb2.c 里 TZSET / TZGET / SCHEDGET / SCHEDSET 的规则应答；2.6.13 及更早的
  * 假桩对 TZSET、TZGET 一声不吭。 */
@@ -17,7 +17,7 @@ import { languages, translate } from "../src/i18n.js";
 import { tzPacks } from "../src/packs-tz.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("39 个时区：整点 -12 到 +14，加 12 个半小时、45 分的", () => {
@@ -46,10 +46,10 @@ test("和迪文屏工具 tz_zones.py 的 ZONES 逐项相同", () => {
     "print(json.dumps([list(tz_zones.ZONES), [tz_zones.label(z) for z in tz_zones.ZONES]]))";
   let out;
   try {
-    out = execFileSync("python3", ["-c", code, resolve(root, "文档/迪文屏/工具")], { encoding: "utf8" });
+    out = execFileSync("python3", ["-c", code, resolve(root, "AC06/文档/迪文屏/工具")], { encoding: "utf8" });
   } catch (error) {
     /* 没有 python3 的机器：退回按文件文字核对。 */
-    const text = read("文档/迪文屏/工具/tz_zones.py");
+    const text = read("AC06/文档/迪文屏/工具/tz_zones.py");
     assert.match(text, /ZONES = tuple\(sorted\(set\(range\(-720, 841, 60\)\) \| set\(EXTRA\)\)\)/);
     assert.match(text, /EXTRA = \(-570, -210, 210, 270, 330, 345, 390, 525, 570, 630, 765, 825\)/);
     return;
@@ -254,7 +254,7 @@ test("12 种语言：时区设置的字符串都有，没有漏成英文或中�
 });
 
 test("App.vue：时区页用到的字符串都在表里；预约页不再有时区输入框", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   const tzPage = vue.match(/<section v-else-if="page === 'tz'"[\s\S]*?<\/section>/);
   const sched = vue.match(/<section v-else-if="page === 'sched'"[\s\S]*?<\/section>/);
   assert.ok(tzPage && sched);

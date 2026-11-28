@@ -6,11 +6,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { FRAME_HEADS as M01_HEADS, FRAME_HEADS_AC06, AC06_KNOWN, KNOWN_PREFIXES as M01_KNOWN, javaSource as java, splitFrames, atModeStream } from "./helpers/m01-phone-layer.mjs";
 
-const read = (path) => readFileSync(new URL("../../../" + path, import.meta.url), "utf8");
-const swiftParser = read("ble-ios/Core/Sources/EVCCore/FrameParser.swift");
-const swiftLink = read("ble-ios/App/Sources/BleLink.swift");
-const swiftBridge = read("ble-ios/Core/Sources/EVCCore/Bridge.swift");
-const shim = read("ble-ios/App/Resources/Bridge/evc-shim.js");
+const read = (path) => readFileSync(new URL("../../" + path, import.meta.url), "utf8");
+const swiftParser = read("ios/Core/Sources/EVCCore/FrameParser.swift");
+const swiftLink = read("ios/App/Sources/BleLink.swift");
+const swiftBridge = read("ios/Core/Sources/EVCCore/Bridge.swift");
+const shim = read("ios/App/Resources/Bridge/evc-shim.js");
 
 /* AC06 2.8.1 的那张表（1aa5371），一项不能少、顺序不变。 */
 const AC06_2_8_1 = ["STAT ", "WCFG ", "FLT ", "LIVE ", "ACK ", "AP ", "APDONE", "OCPP ", "CFG ", "IMAX ", "SCHED ",

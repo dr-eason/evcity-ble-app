@@ -1,6 +1,6 @@
 /* 相位设置（PHASEGET / PHASESET）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/phase.test.mjs
+ *     node --test APP/ui/test/phase.test.mjs
  *
  * 假桩按固件 wb2.c 的规则应答：PHASEGET 回 "PHASE 0/1"（没有 ACK），充电中改成另一个值回 BUSY。 */
 import test from "node:test";
@@ -15,7 +15,7 @@ import { parseAuthLine, resendable } from "../src/auth.js";
 import { SETTINGS_GROUPS } from "../src/tabs.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 /* 日语的“三相”和中文同形，翻出来和键一样是对的。 */
 const sameAsKey = (lang, key) => lang === "ja" && key === "三相";
@@ -66,8 +66,8 @@ test("固件认这两条命令，应答格式和这里解析的一样", () => {
     assert.ok(wb2.includes('"' + reply + '"'), reply);
   }
   /* 手机蓝牙层放行 "PHASE " 行首（没有 ACK 前缀）。 */
-  assert.ok(read("AC06/tools/ble-finder/src/com/evcity/acv2/MainActivity.java").includes('line.startsWith("PHASE ")'));
-  assert.ok(read("AC06/tools/ble-ios/Core/Sources/EVCCore/FrameParser.swift").includes('"PHASE "'));
+  assert.ok(read("APP/android/src/com/evcity/acv2/MainActivity.java").includes('line.startsWith("PHASE ")'));
+  assert.ok(read("APP/ios/Core/Sources/EVCCore/FrameParser.swift").includes('"PHASE "'));
 });
 
 test("解析：PHASE 0/1、ACK PHASESET OK/FAIL/BUSY；别的行和鉴权应答不认", () => {
@@ -137,7 +137,7 @@ test("12 种语言的文案都齐，不是中文键、也不是英文原样", ()
 });
 
 test("App.vue：相位页、菜单、提示用到的字符串在每种语言里都有；入口挨着保护设置", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   const block = vue.match(/<section v-else-if="page === 'phase'"[\s\S]*?<\/section>/);
   assert.ok(block, "App.vue 里没有相位页");
   const used = new Set(["相位", "单相或三相，决定 L2、L3 是否参与保护判断"]);

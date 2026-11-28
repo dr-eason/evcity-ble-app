@@ -1,6 +1,6 @@
 /* 手机自动授时的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 假桩按固件 wb2.c 里 TIMESET 的规则应答；旧固件的假桩对 TIMESET 一声不吭。
  * 心跳校时（2.6.8）：假桩按 wb2.c 里 ble_heart_time 的规则处理带时间的心跳。 */

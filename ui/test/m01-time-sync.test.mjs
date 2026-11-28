@@ -1,6 +1,6 @@
 /* 手机自动授时的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 假桩按固件 wb2.c 里 TIMESET 的规则应答：WiFi、OCPP、4G 三个开关有一个开着就回 NET。
  * 心跳校时：假桩按 wb2.c 里 ble_heart_time 的规则处理带时间的心跳。 */

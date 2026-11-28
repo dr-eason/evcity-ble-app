@@ -124,7 +124,7 @@ export function parseBinName(name) {
   return m ? { version: m[1], crc: m[2].toUpperCase() } : null;
 }
 
-/* 版本文件夹里的固件：只按 .bin 后缀（M01 的文件名规则还没定），带上从文件名解析出的版本和 CRC。 */
+/* 版本文件夹里的固件：只按 .bin 后缀列出来，带上从文件名解析出的版本和 CRC（AC06、M01 发布时都叫 V<版本>_<CRC>.bin）。 */
 export function binFiles(entries, under) {
   const out = [];
   for (const e of entries || []) {

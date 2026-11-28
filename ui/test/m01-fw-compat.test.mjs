@@ -1,6 +1,6 @@
 /* App 和固件兼容框架（ui/src/fw-compat.js）的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/fw-compat.test.mjs
+ *     node --test APP/ui/test/fw-compat.test.mjs
  *
  * 一、版本号、能力位的解析；能力表和固件 ble_caps.h、版本号、协议文档、框架文档对得上。
  * 二、模拟各版老固件（1.0.0 … 1.3.3，没有能力位）和新固件（1.3.4 起带能力位，含以后的
@@ -27,12 +27,12 @@ import { COMMANDS, GATED, OLD } from "./helpers/m01-fw-versions.mjs";
 const fixture = (name) => readFileSync(new URL("./fixtures/m01/" + name, import.meta.url), "utf8");
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const T = (text) => text.replace(/⇥/g, "\t");
 const capsHeader = fixture("ble_caps.h");
 const appConfig = fixture("app_config.h");
-const appVue = read("AC06/tools/ble-finder/ui/src/m01/M01App.vue");
+const appVue = read("APP/ui/src/m01/M01App.vue");
 const frameworkDoc = fixture("App固件兼容框架.md");
 const protocolDoc = fixture("M01蓝牙协议.md");
 const FW_NOW = /#define M01_FW_VERSION\s+"([^"]+)"/.exec(appConfig)[1];
@@ -181,6 +181,56 @@ test("拿不到版本：还没收到时、等不到时、认不出时都按最�
   assert.equal(fwGiveUp(known), known);
 });
 
+/* 3.1.0 起 M01、AC06、App 统一版本号：M01 固件从 1.3.6 直接到 3.1.0，App 的版本从 1.3.x 的 M01 模块版本
+ * 变成 3.x。能力判断不能因为这一跳出错；版本号和 App 不同一律提示，能力位齐全也不例外。 */
+test("版本号从 1.3.x 跳到 3.x：能力照旧；版本号比 App 旧的一律提示，能力位齐全也提示", () => {
+  assert.ok(compareVersion(APP_VERSION, "3.1.0") >= 0, "App 的版本是统一后的 3.x");
+  assert.ok(compareVersion(FW_NOW, "3.1.0") >= 0, "M01 固件的版本是统一后的 3.x");
+  /* 3.x 的固件：报了能力位照能力位；没报（不该发生）按版本号，比表里所有的 since 都新，全有。 */
+  for (const cap of CAPS) {
+    assert.ok(compareVersion(cap.since, "3.0.0") < 0, cap.key + " 的 since 是 M01 自己的 1.x 版本号");
+    assert.equal(supports(stateOf("3.1.0"), cap.key), true, cap.key);
+    assert.equal(supports(stateOf("3.1.0", ALL_BITS), cap.key), true, cap.key);
+    assert.equal(supports(stateOf("3.1.0", "0"), cap.key), false, cap.key + "：能力位说没有就是没有");
+  }
+  /* 同版：没有提示。 */
+  assert.equal(compatNotice(stateOf("3.1.0", ALL_BITS), "3.1.0"), null);
+  assert.equal(fwRelation(stateOf("3.1.0", ALL_BITS), "3.1.0"), "same");
+  const olderNotice = (fw, app) => ({ text: COMPAT_TEXTS.older, vars: { fw, app, min: MIN_FW }, warn: false });
+  /* App 比固件新一版（App 每次发版都加一，现场的桩还没升级）：能力位齐全也提示。 */
+  assert.equal(fwRelation(stateOf("3.1.0", ALL_BITS), "3.1.1"), "older");
+  assert.deepEqual(compatNotice(stateOf("3.1.0", ALL_BITS), "3.1.1"), olderNotice("3.1.0", "3.1.1"));
+  /* 现场的老固件：1.3.4～1.3.6 能力位齐全，功能全有，照样是 older、照样提示。 */
+  for (const fw of ["1.3.4", "1.3.5", "1.3.6"]) {
+    const state = stateOf(fw, ALL_BITS);
+    for (const cap of CAPS) assert.equal(supports(state, cap.key), true, fw + " " + cap.key);
+    assert.equal(fwRelation(state, "3.1.0"), "older", fw);
+    assert.deepEqual(compatNotice(state, "3.1.0"), olderNotice(fw, "3.1.0"), fw);
+  }
+  /* 1.3.2 / 1.3.3 没有能力位，按版本号功能全有：也是 older、也提示。 */
+  for (const fw of ["1.3.2", "1.3.3"]) {
+    const state = stateOf(fw);
+    for (const cap of CAPS) assert.equal(supports(state, cap.key), true, fw + " " + cap.key);
+    assert.equal(fwRelation(state, "3.1.0"), "older", fw);
+    assert.deepEqual(compatNotice(state, "3.1.0"), olderNotice(fw, "3.1.0"), fw);
+  }
+  /* 缺功能的也是这一句，另外每项缺的功能有自己的提示：1.2.0 没有能力位，按版本号缺 1.3.x 的项；
+   * 1.3.6 的能力位里少一项（bit 12）也算。 */
+  assert.equal(fwRelation(stateOf("1.2.0"), "3.1.0"), "older");
+  assert.equal(compatNotice(stateOf("1.2.0"), "3.1.0").text, COMPAT_TEXTS.older);
+  assert.equal(lackNote(stateOf("1.2.0"), "ocppWss").text, COMPAT_TEXTS.lack);
+  assert.equal(fwRelation(stateOf("1.3.6", "FFF"), "3.1.0"), "older");
+  assert.equal(compatNotice(stateOf("1.3.6", "FFF"), "3.1.0").text, COMPAT_TEXTS.older);
+  assert.equal(lackNote(stateOf("1.3.6", "FFF"), "apHex").text, COMPAT_TEXTS.lack);
+  assert.equal(lackNote(stateOf("1.3.6", ALL_BITS), "apHex"), null);
+  /* 比 App 新的照旧提示。 */
+  assert.equal(fwRelation(stateOf("3.1.1", ALL_BITS), "3.1.0"), "newer");
+  /* 升级页只按版本号比大小：1.3.x → 3.x 不是降级，3.x → 1.3.x 是。 */
+  assert.equal(isDowngrade("3.1.0", "1.3.6"), false);
+  assert.equal(isDowngrade("1.3.6", "3.1.0"), true);
+  assert.equal(isDowngrade("3.1.0", "3.1.0"), false);
+});
+
 test("固件和 App 的关系：还没收到、读不到、太老、旧、同版、新，各有一句提示", () => {
   assert.equal(fwRelation(FW_UNKNOWN), "pending");
   assert.equal(compatNotice(FW_UNKNOWN), null);
@@ -192,8 +242,9 @@ test("固件和 App 的关系：还没收到、读不到、太老、旧、同版
   assert.deepEqual(compatNotice(stateOf("1.2.0")), { text: COMPAT_TEXTS.older, vars: { fw: "1.2.0", app: APP_VERSION, min: MIN_FW }, warn: false });
   assert.equal(fwRelation(stateOf(APP_VERSION, ALL_BITS)), "same");
   assert.equal(compatNotice(stateOf(APP_VERSION, ALL_BITS)), null);
-  assert.equal(fwRelation(stateOf("1.4.0", ALL_BITS)), "newer");
-  assert.equal(compatNotice(stateOf("1.4.0", ALL_BITS)).text, COMPAT_TEXTS.newer);
+  const newer = (Number(APP_VERSION.split(".")[0]) + 1) + ".0.0";
+  assert.equal(fwRelation(stateOf(newer, ALL_BITS)), "newer");
+  assert.equal(compatNotice(stateOf(newer, ALL_BITS)).text, COMPAT_TEXTS.newer);
   /* 传进来的 App 版本优先（测试用）。 */
   assert.equal(fwRelation(stateOf("1.3.4"), "1.3.3"), "newer");
 });
@@ -308,7 +359,7 @@ test("App.vue：连上先拿固件版本，换桩、断开清掉；别处只问 
     assert.ok(asked.has(key) || script.includes('"' + key + '"'), key);
   }
   /* 不在 fw-compat.js 以外比版本号、猜固件新旧。 */
-  const src = resolve(root, "AC06/tools/ble-finder/ui/src/m01");
+  const src = resolve(root, "APP/ui/src/m01");
   for (const file of readdirSync(src)) {
     if (file === "fw-compat.js" || !/\.(js|vue)$/.test(file)) continue;
     const text = readFileSync(resolve(src, file), "utf8");

@@ -1,6 +1,6 @@
 /* 蓝牙/WiFi 模组版本的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 假桩按固件 wb2.c 里 MODVERGET 的规则应答；旧固件的假桩对 MODVERGET 一声不吭。 */
 import test from "node:test";

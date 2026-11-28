@@ -1,6 +1,6 @@
 /* 4G 的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/lte.test.mjs
+ *     node --test APP/ui/test/lte.test.mjs
  *
  * 假桩按蓝牙协议应答（LTEGET / LTESET / APNGET / APNSET / LTESTAT，互斥规则和固件
  * lte_cfg_exclusive() 一样）。 */

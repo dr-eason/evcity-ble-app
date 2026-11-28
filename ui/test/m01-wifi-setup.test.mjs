@@ -1,6 +1,6 @@
 /* WiFi 配网页的主机测试（src/wifi-setup.js）：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 用户报的"开启 WiFi 保存失败、搜索热点也不行"：桩上主板联网开关关着，WIFISWSET⇥1 回 FAIL，
  * App 只写"WiFi 开关没有保存"；老固件在 WiFi 开关关着时回 ACK WSCAN OK 却不扫，App 一直写

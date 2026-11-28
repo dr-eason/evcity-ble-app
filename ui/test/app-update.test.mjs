@@ -1,7 +1,7 @@
 /* App 自己的更新检查（AC-34）：版本比较、文件名和目录列表、状态机（自动检查不出声、手动检查给提示、
  * 取消不下载、iOS 不下载）、12 种语言、扫描页底部的版本号和出品方、原生两头的约定。
  *
- *     node --test AC06/tools/ble-finder/ui/test/app-update.test.mjs
+ *     node --test APP/ui/test/app-update.test.mjs
  *
  * 没有手机：规则用 app-update.js 直接测；页面用 helpers/mount-shell.mjs 挂起来，window.EVC 是假的；
  * Android / iOS 原生只核对源码里的约定。公开仓（没有 Android）里找不到的文件那几条跳过。 */
@@ -23,9 +23,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ui = resolve(here, "..");
 const read = (path) => readFileSync(path, "utf8");
 const pick = (...paths) => paths.map((p) => resolve(ui, p)).find((p) => existsSync(p)) || "";
-const IOS = pick("../../ble-ios", "../ios");
-const ANDROID = pick("../src/com/evcity/acv2/AppUpdater.java") ? resolve(ui, "..") : "";
-const UPLOAD = pick("../../release/upload_release.sh");
+const IOS = pick("../ios");
+const ANDROID = pick("../android/src/com/evcity/acv2/AppUpdater.java") ? resolve(ui, "../android") : "";
+const UPLOAD = pick("../../tools/release/upload_release.sh");
 
 const row = (name, size = "438 KB", dir = false) =>
   `<tr><td><a href="/files/Android%20APP/${encodeURIComponent(name)}${dir ? "/" : ""}">${name}</a></td>` +

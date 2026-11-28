@@ -1,4 +1,4 @@
-/* 手机蓝牙层（AC06/tools/ble-finder/src/com/evcity/acv2/MainActivity.java）在连 M01 时的参照实现，
+/* 手机蓝牙层（APP/android/src/com/evcity/acv2/MainActivity.java）在连 M01 时的参照实现，
  * 给 M01 模块的主机测试用（从 M01 仓库的 test/helpers/phone-layer.mjs 拷来，改成读合并后的 Java）。
  *
  * 行首表直接从 Java 源码里读出来（FRAME_HEADS_M01、knownLineM01），所以 Java 那边改了表，这里的
@@ -9,7 +9,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const JAVA_PATH = resolve(here, "../../../src/com/evcity/acv2/MainActivity.java");
+export const JAVA_PATH = resolve(here, "../../../android/src/com/evcity/acv2/MainActivity.java");
 export const javaSource = readFileSync(JAVA_PATH, "utf8");
 
 function unescape(text) {

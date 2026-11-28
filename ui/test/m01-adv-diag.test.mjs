@@ -1,6 +1,6 @@
 /* 蓝牙广播诊断（ADVGET / ACK ADV）的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/adv-diag.test.mjs
+ *     node --test APP/ui/test/adv-diag.test.mjs
  *
  * 应答的解析、和固件格式串核对、协议文档里的样例行、界面的接法。 */
 import test from "node:test";
@@ -14,7 +14,7 @@ import { hasKey, languages } from "../src/m01/i18n.js";
 const fixture = (name) => readFileSync(new URL("./fixtures/m01/" + name, import.meta.url), "utf8");
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const SAMPLE = "ACK ADV restarts=3 fail=1 resets=0 reason=periodic reboots=2 drops=37";
 
@@ -68,7 +68,7 @@ test("界面：六行，名字 12 种语言都有；App.vue 在模组版本页�
     if (item.id === "zh") continue;
     for (const row of rows) assert.ok(hasKey(item.id, row.label), item.id + " " + row.label);
   }
-  const vue = read("AC06/tools/ble-finder/ui/src/m01/M01App.vue");
+  const vue = read("APP/ui/src/m01/M01App.vue");
   assert.match(vue, /readAdv\(\{ ask, alive \}\)/);
   assert.match(vue, /if \(parseAdv\(line\) !== null\) return;/);
   assert.ok(vue.includes("t('蓝牙广播诊断')"));

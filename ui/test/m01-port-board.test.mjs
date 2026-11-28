@@ -1,6 +1,6 @@
 /* 首页 10 路格子（port-board.js）的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 先把原来"数卡住、不准"的几个原因在这里复现出来（老办法：每秒推送的 ACK PORTS / PORTX），
  * 再测新的办法：SNAPGET 一问一答、请求号、校验、每格的更新时刻。快照的样例行取自
@@ -22,11 +22,11 @@ import { atModeStream, javaSource, phoneKeeps, splitFrames } from "./helpers/m01
 const fixture = (name) => readFileSync(new URL("./fixtures/m01/" + name, import.meta.url), "utf8");
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = resolve(here, "../../../../..");
+const repo = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(repo, path), "utf8");
 const T = (text) => text.replace(/⇥/g, "\t");
 const doc = fixture("M01蓝牙协议.md");
-const appVue = read("AC06/tools/ble-finder/ui/src/m01/M01App.vue");
+const appVue = read("APP/ui/src/m01/M01App.vue");
 
 const SNAP_1 = T("ACK SNAP⇥41⇥10⇥1⇥2300⇥P,0,0,0,0,-;P,0,0,0,0,-;C,460,24,12,200,-;C,4,96,752,2,4904;X,0,0,0,0,-⇥5540");
 const SNAP_2 = T("ACK SNAP⇥41⇥10⇥6⇥2300⇥U,0,0,0,0,-;R,0,0,0,0,-;P,0,0,0,0,-;P,0,0,0,0,-;P,0,0,0,0,-⇥933A");

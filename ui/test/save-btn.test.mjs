@@ -1,6 +1,6 @@
 /* 设置页「保存」按钮：保存的结果写在按钮上（src/save-btn.js），不再写到页面上面的提示里。
  *
- *     node --test AC06/tools/ble-finder/ui/test/save-btn.test.mjs
+ *     node --test APP/ui/test/save-btn.test.mjs
  *
  * 1. 状态机（假的定时器）：保存中… → 保存成功 / 保存成功，重启生效 / 保存失败，2.5 秒后回到「保存」；
  *    等不到应答按「充电桩没有应答」失败；显示期间再点不算；reset / dispose 清定时器。

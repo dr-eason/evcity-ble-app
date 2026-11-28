@@ -1,6 +1,6 @@
 /* 启动和停止之间至少隔 1 秒（3.0.8，src/charge-toggle-guard.js）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/charge-toggle-guard.test.mjs
+ *     node --test APP/ui/test/charge-toggle-guard.test.mjs
  *
  * 1. 规矩本身：启动后 1 秒内停止不算、满 1 秒可以；反过来一样；每一路各算各的；
  *    命令没成马上放开；断开清掉。
@@ -205,7 +205,7 @@ test("App.vue（汽车充电桩）：启动、停止按钮都接了，处理函�
   /* 置灰用的是 App 已有的 button:disabled 样式。 */
   assert.match(vue, /button:disabled, input:disabled \{ opacity: 0\.45; \}/);
   /* 固件的应答就是这一行。 */
-  const wb2 = readFileSync(resolve(here, "../../../../app/src/wb2.c"), "utf8");
+  const wb2 = readFileSync(resolve(here, "../../../AC06/app/src/wb2.c"), "utf8");
   assert.ok(wb2.includes('ble_queue("ACK START REJECTED");'));
 });
 
@@ -247,7 +247,7 @@ test("M01App.vue（摩托车充电桩）：格子、详情页、全部停止都�
 });
 
 test("打包好的页面（assets/index.html）里有这一版的启停间隔", () => {
-  const html = readFileSync(resolve(here, "../../assets/index.html"), "utf8");
+  const html = readFileSync(resolve(here, "../../android/assets/index.html"), "utf8");
   assert.ok(html.includes("ACK START REJECTED"));
   assert.ok(!html.includes(`send('START')`) && !/onClick:[^,]{0,40}=>\s*\w+\("START"\)/.test(html));
 });

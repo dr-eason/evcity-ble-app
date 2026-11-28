@@ -1,6 +1,6 @@
 # iOS 构建（GitHub Actions，macOS runner）。
 #
-# 这个文件在 AC-V2 里放在 AC06/tools/ble-ios/ci/ios.yml，不在 AC-V2 的 .github/ 下，所以在 AC-V2 里不会跑。
+# 这个文件在 AC-V2 里放在 APP/ios/ci/ios.yml，不在 AC-V2 的 .github/ 下，所以在 AC-V2 里不会跑。
 # 镜像脚本（mirror/mirror_ble.sh）把它放到公开仓 dr-eason/evcity-ble-app 的 .github/workflows/ios.yml。
 # 下面的路径都按公开仓的目录来写：ui/ 是 Vue 界面，ios/ 是 iOS 工程。
 #

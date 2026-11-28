@@ -1,5 +1,5 @@
 /* 蓝牙 OTA 的滑动窗口发送（回退 N）。不直接碰蓝牙和定时器，收发和计时都由调用方传进来，
- * 所以能在电脑上用 node 测：node --test M01/tools/ble-finder/ui/test/*.test.mjs
+ * 所以能在电脑上用 node 测：node --test APP/ui/test/*.test.mjs
  *
  * 固件（M01/app/src/ota.c）的行为，这里全靠它：
  *   - 一片必须紧接上一片（offset == 已写长度）才写入，回 "ACK OTADATA 序号 OK"；

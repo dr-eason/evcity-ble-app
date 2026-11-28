@@ -105,7 +105,7 @@
 #define M01_DBG_UART_BAUD      230400u
 #define M01_TELEMETRY_ENABLE   1u
 
-/* 遥测怎么发（service/src/telemetry.c、telem_sched.c），说明见 文档/03-方案/M01-遥测.md 第 1 节。
+/* 遥测怎么发（service/src/telemetry.c、telem_sched.c），说明见 M01/文档/03-方案/M01-遥测.md 第 1 节。
  * 心跳任务 0.5 秒一拍。整帧 $STAT 只在关键帧发，平时发增量 $STD：整桩的读数每帧都带，
  * 整桩的状态和配置变了才带，端口只带变了的。 */
 #define M01_TELEM_IDLE_MS       5000u   /* 没有端口在充：$STD 至少这么久一行（当心跳） */
@@ -137,7 +137,7 @@
 #define TASK_WB2_PRIO           1
 #define TASK_WB2_STACK          1024    /* 单位：word。状态帧里的浮点格式化会吃很多栈 */
 
-/* 触摸板（J7），协议见 文档/04-协议/触摸板通讯协议.md，app/src/touch_panel.c。
+/* 触摸板（J7），协议见 M01/文档/04-协议/触摸板通讯协议.md，app/src/touch_panel.c。
  * 0 = 不建任务、不初始化串口（引脚保持复位后的浮空输入）。 */
 #define M01_TOUCH_PANEL_ENABLE  1
 /* 协议里没有"选路"命令。1 = 触摸板用 0x01 查询某一路，就当作用户选中了这一路
@@ -245,7 +245,7 @@
 #define M01_OCPP_BOOT_TRIES_MAX     3u
 
 /* ---- OCPP 上行流量（10 路）和间隔下限（app/src/wb2.c；节拍算法在 service/src/ocpp_pace.c） ----
- * 估算见 文档/03-方案/M01-架构.md 7.2 节。要点：桩自己发的 CALL 同一时刻只有一条没应答
+ * 估算见 M01/文档/03-方案/M01-架构.md 7.2 节。要点：桩自己发的 CALL 同一时刻只有一条没应答
  * （OCPP-J 4.1.1），一条 MeterValues 约 0.4 KB，串口 115200 上只要 30 多毫秒，真正的瓶颈是
  * 一来一回：WiFi 0.2–0.5 秒，4G 0.3–1 秒，所以这条通道每秒最多 2–5 条，4G 最坏 1 条。
  * 10 路的 MeterValues 是 10 / 间隔 条每秒，乘上 10 以后最先把这条通道占满的就是它。
@@ -281,7 +281,7 @@
 #define M01_OCPP_BLE_FIRST_MS           300u
 
 /* 版本号 */
-/* M01 的版本号从 1.0.0 起，来历见 文档/08-实施报告/M01-来历与沿革.md。 */
-#define M01_FW_VERSION         "1.3.6"
+/* M01 的版本号从 1.0.0 起，来历见 M01/文档/08-实施报告/M01-来历与沿革.md。 */
+#define M01_FW_VERSION         "3.1.0"
 
 #endif

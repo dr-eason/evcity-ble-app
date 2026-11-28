@@ -3,16 +3,16 @@
 # iOS 15 起只要这一张，其余尺寸 Xcode 自己缩。
 #
 # 源图是 App/Resources/icon-source.png，它是 Android 的
-# ble-finder/res/drawable/ic_launcher.png 原样拷过来的（512×512，RGB，没有透明通道），
+# APP/android/res/drawable/ic_launcher.png 原样拷过来的（512×512，RGB，没有透明通道），
 # 这样公开仓里没有 Android 的 res/ 也能编。Android 那张图换了的话：
-#   ./scripts/make_icon.sh --refresh    从 ../ble-finder/res 重新拷源图，再重新生成
+#   ./scripts/make_icon.sh --refresh    从 ../android/res 重新拷源图，再重新生成
 #   ./scripts/make_icon.sh --force      源图不动，只重新生成
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$HERE/App/Resources/icon-source.png"
 OUT="$HERE/App/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
-ANDROID="$HERE/../ble-finder/res/drawable/ic_launcher.png"
+ANDROID="$HERE/../android/res/drawable/ic_launcher.png"
 FORCE=0
 
 case "${1:-}" in

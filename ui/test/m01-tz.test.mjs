@@ -1,6 +1,6 @@
 /* 时区设置的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 假桩按固件 wb2.c 里 TZSET / TZGET 的规则应答（文档/04-协议/M01蓝牙协议.md 5.6）。 */
 import test from "node:test";
@@ -14,7 +14,7 @@ import { hasKey, languages, translate } from "../src/m01/i18n.js";
 import { tzPacks } from "../src/m01/packs-tz.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("39 个时区：整点 -12 到 +14，加 12 个半小时、45 分的", () => {
@@ -47,7 +47,7 @@ test("没有旧固件的退路：不看版本号，不走 SCHEDGET / SCHEDSET", 
   for (const name of ["tzSupported", "legacyCommand", "parseSchedLine", "TZSET_MIN_VERSION"]) {
     assert.equal(name in tzModule, false, name + " 还在");
   }
-  assert.ok(!/SCHED/.test(read("AC06/tools/ble-finder/ui/src/m01/tz.js")));
+  assert.ok(!/SCHED/.test(read("APP/ui/src/m01/tz.js")));
 });
 
 test("应答行", () => {
@@ -166,7 +166,7 @@ test("12 种语言：时区设置的字符串都有，没有漏成英文或中�
 });
 
 test("App.vue：时区页用到的字符串每种语言的表里都有；没有预约页", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/m01/M01App.vue");
+  const vue = read("APP/ui/src/m01/M01App.vue");
   const tzPage = vue.match(/<section v-else-if="page === 'tz'"[\s\S]*?<\/section>/);
   assert.ok(tzPage);
   const used = new Set();

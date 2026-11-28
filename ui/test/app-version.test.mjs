@@ -1,6 +1,6 @@
 /* App 版本号：原生壳 > 编译时 > "—"；首页底部和设置 → 关于用同一个来源。
  *
- *     node --test AC06/tools/ble-finder/ui/test/app-version.test.mjs
+ *     node --test APP/ui/test/app-version.test.mjs
  *
  * 没有手机：版本来源用 app-version.js 直接测；Android / iOS 原生只核对源码里的约定，再把 iOS 的
  * evc-shim.js 放进一个假的 window 里跑一遍。公开仓 evcity-ble-app（ui/ + ios/，没有 Android）里
@@ -17,8 +17,8 @@ const ui = resolve(here, "..");
 const read = (path) => readFileSync(path, "utf8");
 /* 第一个存在的路径：AC-V2 的目录布局 / 公开仓的目录布局。 */
 const pick = (...paths) => paths.map((p) => resolve(ui, p)).find((p) => existsSync(p)) || "";
-const IOS = pick("../../ble-ios", "../ios");
-const JAVA = pick("../src/com/evcity/acv2/MainActivity.java");
+const IOS = pick("../ios");
+const JAVA = pick("../android/src/com/evcity/acv2/MainActivity.java");
 
 const native = (version, build) => ({ appVersion: () => version, appBuild: () => build });
 
@@ -104,12 +104,13 @@ test("i18n：「App 版本」12 种语言都有（中文是键）", async () => 
 test("编译时兜底：先 AndroidManifest 的 versionName，再 iOS Base.xcconfig 的 EVC_VERSION", () => {
   const vite = read(resolve(ui, "vite.config.js"));
   assert.match(vite, /__APP_VERSION__: JSON\.stringify\(appVersion\(\)\)/);
-  assert.match(vite, /"\.\.\/ios\/Config\/Base\.xcconfig", "\.\.\/\.\.\/ble-ios\/Config\/Base\.xcconfig"/);
+  assert.match(vite, /readText\("\.\.\/android\/AndroidManifest\.xml"\)/);
+  assert.match(vite, /"\.\.\/ios\/Config\/Base\.xcconfig"/);
   if (IOS) {
     const xc = read(resolve(IOS, "Config/Base.xcconfig"));
     const m = /^\s*EVC_VERSION\s*=\s*([^\s/]+)/m.exec(xc);
     assert.ok(m, "Base.xcconfig 里有 EVC_VERSION");
-    const manifest = pick("../AndroidManifest.xml");
+    const manifest = pick("../android/AndroidManifest.xml");
     if (manifest) {
       const name = /android:versionName="([^"]+)"/.exec(read(manifest));
       assert.equal(m[1], name[1], "iOS 和 Android 的版本号一致");

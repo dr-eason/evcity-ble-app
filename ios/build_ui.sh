@@ -6,11 +6,11 @@
 #
 # 界面源码在哪里自动找，两种目录布局都认：
 #   公开仓  evcity-ble-app：  ios/ 旁边的 ../ui
-#   AC-V2：                   AC06/tools/ble-ios/ 旁边的 ../ble-finder/ui
+#   AC-V2：                   APP/ios/ 旁边的 ../ui（APP/ui）
 # 也可以用环境变量 EVC_UI_DIR 直接指定。
 #
-# 注意：vite 的配置（ui/vite.config.js）会把单文件的 index.html 写到 ui 的上一级 assets/ 里，
-# 写之前先清空那个目录。在 AC-V2 里那就是 Android 的 ble-finder/assets/index.html，
+# 注意：vite 的配置（ui/vite.config.js）会把单文件的 index.html 写到 ui 旁边：AC-V2 里是 Android 壳的
+# ../android/assets/index.html（APP/android/assets），公开仓里是 ../assets/index.html。写之前先清空那个目录，
 # 也就是说跑这个脚本等于顺便重编了 Android 用的界面文件。
 set -euo pipefail
 
@@ -26,7 +26,7 @@ done
 
 UI_DIR="${EVC_UI_DIR:-}"
 if [ -z "$UI_DIR" ]; then
-  for candidate in "$HERE/../ui" "$HERE/../ble-finder/ui"; do
+  for candidate in "$HERE/../ui"; do
     if [ -f "$candidate/package.json" ]; then
       UI_DIR="$candidate"
       break
@@ -34,7 +34,7 @@ if [ -z "$UI_DIR" ]; then
   done
 fi
 if [ -z "$UI_DIR" ] || [ ! -f "$UI_DIR/package.json" ]; then
-  echo "找不到 Vue 界面源码（../ui 和 ../ble-finder/ui 都没有 package.json）。" >&2
+  echo "找不到 Vue 界面源码（../ui 没有 package.json）。" >&2
   echo "可以用 EVC_UI_DIR=<目录> 指定。" >&2
   exit 1
 fi
@@ -49,7 +49,11 @@ if [ "$BUILD" = "1" ]; then
 fi
 
 # 和 Android 一样用单文件的 index.html（脚本和样式都内嵌）。
-SINGLE="$UI_DIR/../assets/index.html"
+if [ -f "$UI_DIR/../android/AndroidManifest.xml" ]; then
+  SINGLE="$UI_DIR/../android/assets/index.html"
+else
+  SINGLE="$UI_DIR/../assets/index.html"
+fi
 if [ ! -s "$SINGLE" ]; then
   echo "没有找到编好的界面：$SINGLE" >&2
   echo "去掉 --no-build 再跑一次。" >&2

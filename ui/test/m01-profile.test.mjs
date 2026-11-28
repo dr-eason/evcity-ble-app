@@ -1,6 +1,6 @@
 /* 一键配置（配置备份 / 还原）的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 假桩按 文档/04-协议/M01蓝牙协议.md 的命令和应答格式回答（和固件 wb2.c 的
  * ble_handle_command 一致）；每一行都先过一遍手机蓝牙层的切行和过滤（helpers/phone-layer.mjs，

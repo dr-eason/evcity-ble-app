@@ -1,6 +1,6 @@
 /* 时区页“充电桩当前时间”（2.6.15）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/charger-clock.test.mjs
+ *     node --test APP/ui/test/charger-clock.test.mjs
  *
  * 假桩按固件 wb2.c 里 TIMEGET 的规则应答（ACK TIME <UTC 秒> <时区分钟>，没有时间时秒数 0）；
  * 2.6.14 及更早的假桩对 TIMEGET 一声不吭。 */
@@ -19,7 +19,7 @@ import { languages, translate } from "../src/i18n.js";
 import { tzPacks } from "../src/packs-tz.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const utc = (y, mo, d, h, mi, s) => Date.UTC(y, mo - 1, d, h, mi, s || 0) / 1000;
 
@@ -282,7 +282,7 @@ test("12 种语言：新加的三句都有，没有漏成英文或中文", () =>
 });
 
 test("App.vue：时间在时区页最上面，字符串都走翻译，TIMEGET 的应答有人接", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   const tzPage = vue.match(/<section v-else-if="page === 'tz'"[\s\S]*?<\/section>/);
   assert.ok(tzPage);
   const at = (text) => tzPage[0].indexOf(text);

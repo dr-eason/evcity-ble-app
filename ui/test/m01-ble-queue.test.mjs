@@ -1,6 +1,6 @@
 /* 一问一答队列（ble-queue.js）的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 假桩照协议文档 2.3 节：应答先进一个 4 行的队列，满了以后新的行直接丢掉；不认识的命令
  * 不回任何东西。用假时钟推进，不真的等。 */

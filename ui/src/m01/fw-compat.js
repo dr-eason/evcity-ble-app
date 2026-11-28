@@ -1,4 +1,4 @@
-/* App 和充电桩固件的兼容框架。说明、能力表、新增功能时怎么登记：文档/04-协议/App固件兼容框架.md。
+/* App 和 M01 充电桩固件的兼容框架。说明、能力表、新增功能时怎么登记：M01/文档/04-协议/App固件兼容框架.md。
  *
  * 规矩只有三条：
  *   1. 连上以后先拿固件版本：桩回 STATUS 的那组状态里，ACK SYS 第 1 个字段是固件版本
@@ -10,11 +10,16 @@
  * 判断顺序：桩报了能力位（1.3.4 起）就只看能力位；没报就看版本号是否在 [since, until)。
  * 能力位是固件按自己真有的功能报的，以后去掉了某项、或者某一版裁掉了某项，App 不用改。
  *
+ * 能力只管功能能不能用。"固件和 App 版本不同"的提示另算：只比版本号，不同就提示，能力位齐全也提示
+ * （fwRelation() / compatNotice()）。
+ *
  * 这个文件不碰界面和蓝牙，主机测试 ui/test/fw-compat.test.mjs 直接用。 */
 
-/* 这个 App 的版本。和 AndroidManifest.xml 的 versionName、固件 M01_FW_VERSION 相同
- * （文档/07-开发环境/版本号规则.md），测试会核对。 */
-export const APP_VERSION = "1.3.6";
+/* 这个 App 的版本。和 AndroidManifest.xml 的 versionName、固件 M01_FW_VERSION、AC06_FW_VERSION 相同：
+ * 3.1.0 起 AC06、M01、App 用同一个版本号（仓库根的 VERSION，规则见 文档/版本规则.md）。不手改：
+ * tools/version/set_version.py 一次改全，check_version.py 和测试会核对。M01 自己的版本号到 1.3.6 为止，
+ * 所以能力表里的 since 都是 1.x，3.x 的固件比它们都新；现场 1.3.x 的桩连这个 App 都提示"固件比 App 旧"。 */
+export const APP_VERSION = "3.1.0";
 
 /* ACK SYS 第 11 个字段（能力位）从这一版固件起有。更早的（含 1.3.3）只能按版本号查能力表。 */
 export const CAPS_FIELD_SINCE = "1.3.4";
@@ -30,7 +35,7 @@ export const MIN_FW = "1.0.0";
  *   since  第一个带这项的固件版本
  *   until  （可选）去掉这项的固件版本：这一版起没有
  * 每一项上面的注释写这项是什么、固件没有时 App 怎么做，和文档的能力表一致。顺序按 bit。
- * 新功能加在最后，按 文档/04-协议/App固件兼容框架.md 第 5 节的步骤登记。 */
+ * 新功能加在最后，按 M01/文档/04-协议/App固件兼容框架.md 第 5 节的步骤登记。 */
 export const CAPS = [
   /* 每秒推送 ACK PORTX：每路电流、离线刷卡余额。
    * 没有时：首页格子电流写 — A，不显示余额。 */
@@ -93,7 +98,8 @@ export function compareVersion(a, b) {
   return 0;
 }
 
-/* 固件升级页：选的文件比桩上的旧（降级）。哪一个认不出都不算降级。 */
+/* 固件升级页：选的文件比桩上的旧（降级）。只按版本号比大小：1.3.x → 3.x 不是降级，3.x → 1.3.x 是。
+ * 哪一个认不出都不算降级。 */
 export function isDowngrade(fileVer, pileVer) {
   const file = parseVersion(fileVer);
   const pile = parseVersion(pileVer);
@@ -160,8 +166,11 @@ export function capSince(key) {
 
 /* 固件和 App 的关系：
  *   pending  还没收到 ACK SYS        unknown  等不到、认不出，按 MIN_FW 算
- *   tooOld   比 MIN_FW 还老          older    比 App 旧（有些功能用不了）
- *   same     和 App 同一版            newer    比 App 新（新功能要更新 App） */
+ *   tooOld   比 MIN_FW 还老          older    版本号比 App 旧
+ *   same     版本号和 App 相同        newer    版本号比 App 新（新功能要更新 App）
+ * 只按版本号比，没有例外：版本号和 App 不同就提示（compatNotice()）。现场 1.3.x 的桩连 3.x 的 App，
+ * 哪怕能力位是全的，也是 older、照样提示。能力位 / 能力表只管每项功能能不能用（supports()、lackNote()），
+ * 不管这一行提示写不写。 */
 export function fwRelation(state, appVersion) {
   if (!state || !state.settled) return "pending";
   if (!state.known) return "unknown";

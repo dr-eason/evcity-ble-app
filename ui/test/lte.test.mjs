@@ -1,6 +1,6 @@
 /* 4G（2.6.16）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/lte.test.mjs
+ *     node --test APP/ui/test/lte.test.mjs
  *
  * 假桩按规划里的蓝牙命令应答（LTEGET / LTESET / APNGET / APNSET / LTESTAT，互斥规则和固件
  * lte_cfg_exclusive() 一样）；2.6.15 及更早的假桩对这些命令一声不吭。 */
@@ -654,10 +654,12 @@ test("App.vue：4G 入口在 WiFi 配网下面；4G 页、互斥提示、首页�
   assert.match(script, /if \(line\.indexOf\("WCFG "\) === 0\) \{[\s\S]*?lteHome\.value = null;[\s\S]*?applyWifiConfig/);
 });
 
-test("版本号 3100", () => {
-  const manifest = read("../AndroidManifest.xml");
-  assert.match(manifest, /android:versionCode="3100"/);
-  assert.match(manifest, /android:versionName="3\.1\.0"/);
+test("版本号等于仓库根的 VERSION", () => {
+  const manifest = read("../android/AndroidManifest.xml");
+  const unified = read("../../VERSION").trim();
+  const [major, minor, patch] = unified.split(".").map(Number);
+  assert.equal(/android:versionName="([^"]+)"/.exec(manifest)[1], unified);
+  assert.equal(/android:versionCode="([^"]+)"/.exec(manifest)[1], String(major * 1000 + minor * 100 + patch));
 });
 
 /* 一键配置：带 APN（Protocol、APN、账号、密码），不带 4G 开关。 */

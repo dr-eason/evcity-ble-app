@@ -1,6 +1,6 @@
 /* 严格模式（原名新国标 6 秒停充；GBSTOPGET / GBSTOPSET、LIVE 行里的等车状态、首页停止按钮的倒计时）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/gbstop.test.mjs
+ *     node --test APP/ui/test/gbstop.test.mjs
  *
  * 假桩按固件 wb2.c 的规则应答；更早的固件对这两条一声不吭，LIVE 行也只有三个字段。
  * 一键配置（备份 / 还原、导出 / 导入）里的这一项在 profile.test.mjs。 */
@@ -20,7 +20,7 @@ import { parseAuthLine, resendable } from "../src/auth.js";
 import { SETTINGS_GROUPS } from "../src/tabs.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 /* 假桩：只管这两条命令。opts.silent 旧固件不回；opts.gone 连接没了；opts.dropSet 回 OK 但没存；
@@ -61,9 +61,9 @@ test("固件认这两条命令，应答、LIVE 字段、OCPP 键和这里解析�
   assert.deepEqual(parseAuthLine("ACK GBSTOPGET AUTH"), { kind: "need", cmd: "GBSTOPGET" });
   assert.equal(resendable("GBSTOPSET\t1"), true);
   /* 手机蓝牙层本来就放行 "ACK " 和 "LIVE " 行首，原生代码不用改。 */
-  const java = read("AC06/tools/ble-finder/src/com/evcity/acv2/MainActivity.java");
+  const java = read("APP/android/src/com/evcity/acv2/MainActivity.java");
   assert.ok(java.includes('line.startsWith("ACK ")') && java.includes('line.startsWith("LIVE ")'));
-  const swift = read("AC06/tools/ble-ios/Core/Sources/EVCCore/FrameParser.swift");
+  const swift = read("APP/ios/Core/Sources/EVCCore/FrameParser.swift");
   assert.ok(swift.includes('"ACK "') && swift.includes('"LIVE "'));
   /* 桩最多等 6.5 秒（3.0.6；标准要求超过 6 秒才强制断开），和这里的倒计时一样长。Smart Charging
    * 暂停那个 6 秒（PAUSE_OPEN_TICKS）是另一个数，没有变。 */
@@ -284,7 +284,7 @@ test("12 种语言的文案都齐，不是中文键、也不是英文原样", ()
 });
 
 test("App.vue：首页停止按钮、设置页、菜单入口；用到的字符串每种语言都有", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   const template = vue.slice(0, vue.indexOf("<script"));
   const script = vue.slice(vue.indexOf("<script"));
   /* 停止按钮：置灰、倒计时、点了走 tapStop；模板里不再直接 send('STOP')。
@@ -331,7 +331,7 @@ test("App.vue：首页停止按钮、设置页、菜单入口；用到的字符�
 });
 
 test("打包好的页面（assets/index.html）里有这一版的界面", () => {
-  const html = read("AC06/tools/ble-finder/assets/index.html");
+  const html = read("APP/android/assets/index.html");
   assert.ok(html.includes("GBSTOPGET") && html.includes("GBSTOPSET"));
   assert.ok(html.includes("等待车端关闭，请勿重复点击停止"));
   assert.ok(html.includes("Waiting for the vehicle to stop. Do not tap Stop again"));

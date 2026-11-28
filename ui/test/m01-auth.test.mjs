@@ -1,6 +1,6 @@
 /* 蓝牙鉴权应答（固件 1.3.0 起）的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/auth.test.mjs
+ *     node --test APP/ui/test/auth.test.mjs
  *
  * 假桩按固件 wb2.c 里 ble_handle_command() / ble_auth_try() 的规则应答：没通过 AUTH 时
  * 只认 HB、AUTH、STATUS，别的回 "ACK <命令名> AUTH"；连续输错 5 次锁 60 秒，期间回
@@ -20,7 +20,7 @@ import { authPacks } from "../src/m01/packs-auth.js";
 const fixture = (name) => readFileSync(new URL("./fixtures/m01/" + name, import.meta.url), "utf8");
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 /* ---------------------------------------------------------------- 应答的格式 */
@@ -446,7 +446,7 @@ test("密码页原有的文案各语言也都在", () => {
 /* ---------------------------------------------------------------- 界面的接法、版本号 */
 
 test("App.vue：鉴权应答最先处理，不再按子串认密码不对", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/m01/M01App.vue");
+  const vue = read("APP/ui/src/m01/M01App.vue");
   const script = vue.slice(vue.indexOf("<script setup>"));
   /* applyLine 的第一句。排在 otaWait、parseTimeAck、parseLteAck 这些前面。 */
   assert.match(script, /function applyLine\(line\) \{\n  if \(applyAuthLine\(line\)\) return;/);

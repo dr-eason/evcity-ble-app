@@ -1,5 +1,5 @@
 <!-- M01 摩托车充电桩模块（合并进 AC06 App）。界面按 AC06 的样子重做：底部标签栏、分组设置、
-     同一套颜色和按钮；协议和功能逻辑照 M01 App（M01/tools/ble-finder/ui/src/App.vue）搬过来。
+     同一套颜色和按钮；协议和功能逻辑照 M01 App（APP/ui/src/App.vue）搬过来。
      由 /workspace/plans/m01_merge/gen/make_m01app.py 生成第一版，之后直接改这个文件。 -->
 <template>
   <main class="app m01app" :class="{ 'privacy-page': page === 'privacy', tabbed: tabBarOn }">

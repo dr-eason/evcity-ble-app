@@ -1,6 +1,6 @@
 # App 和固件的兼容框架
 
-2026-11-23，App 和固件 1.3.4 起。手机 App（`M01/tools/ble-finder`）连任何一版 M01 固件都能用：连上先拿固件版本，再按"能力表"决定每一项功能怎么做。代码在 `M01/tools/ble-finder/ui/src/fw-compat.js`，固件一侧在 `M01/app/inc/ble_caps.h`。蓝牙协议本身见 `M01蓝牙协议.md`。
+2026-11-23，App 和固件 1.3.4 起。手机 App（`APP/android`）连任何一版 M01 固件都能用：连上先拿固件版本，再按"能力表"决定每一项功能怎么做。代码在 `APP/ui/src/m01/fw-compat.js`，固件一侧在 `M01/app/inc/ble_caps.h`。蓝牙协议本身见 `M01蓝牙协议.md`。
 
 **一句话照做**：新加或改了一项 App 要区分新老固件的蓝牙功能，就按第 5 节在 `ble_caps.h` 占下一个位号、在 `fw-compat.js` 的 `CAPS` 末尾加一行（`since` 写这次的版本号）、在本文第 3 节的表里加一行，App 里只用 `can("新能力名")` 判断，`node --test` 会把四处对一遍。
 
@@ -14,7 +14,7 @@
 | 拿不到版本 | 按 `1.0.0` 处理：要看能力的功能都先不用，首页和菜单写一行提示 |
 | App 其他代码怎么问 | `can("能力名")`（App.vue）或 `supports(固件情况, "能力名")`，不自己比版本号，不靠"问了没回"猜 |
 
-固件和 App 用同一个版本号（`文档/07-开发环境/版本号规则.md`）。同版本号的固件配同版本号的 App 是完整的；版本不同时按下面的规则降级使用。
+固件和 App 用同一个版本号（`M01/文档/07-开发环境/版本号规则.md`）。同版本号的固件配同版本号的 App 是完整的；版本不同时按下面的规则降级使用。
 
 ## 2. 连上以后的顺序
 
@@ -74,6 +74,8 @@ ACK SYS⇥1.3.4⇥10⇥230.4⇥31⇥1⇥-62⇥UP⇥ON⇥2027-01-15T08:00:00Z⇥b
 | 同版 | 相等 | 不写 | 全部功能 |
 | 比 App 新 | 版本高于 App | "充电桩固件 x 比 App y 新。新加的功能要更新 App 才能用" | App 认识的能力照能力位用；App 不认识的位不管；固件去掉的能力（位是 0）按没有处理 |
 
+这一行只按版本号比，没有例外：版本号和 App 不同就写，哪怕能力位是全的（例如 1.3.6 的桩连 3.1.0 的 App，功能全有，照样写"比 App 旧"）。能力位 / 能力表只管每项功能能不能用，不管这一行写不写。
+
 缺某项功能时的提示统一由 `lackNote(固件情况, 能力名, 哪一句, 占位符)` 给出（`{ text, vars }`），`App.vue` 的 `t()` 直接收这种对象。
 
 ## 5. 新增功能时怎么登记
@@ -82,7 +84,7 @@ ACK SYS⇥1.3.4⇥10⇥230.4⇥31⇥1⇥-62⇥UP⇥ON⇥2027-01-15T08:00:00Z⇥b
 
 步骤（以加一条命令 `FOOGET`、版本升到 1.3.5 为例）：
 
-1. 版本号按 `文档/07-开发环境/版本号规则.md` 升到 `1.3.5`（固件 `M01_FW_VERSION`、`AndroidManifest.xml`、`fw-compat.js` 的 `APP_VERSION` 三处一起改）。
+1. 版本号按 `M01/文档/07-开发环境/版本号规则.md` 升到 `1.3.5`（固件 `M01_FW_VERSION`、`AndroidManifest.xml`、`fw-compat.js` 的 `APP_VERSION` 三处一起改）。
 2. 固件 `M01/app/inc/ble_caps.h`：加 `#define BLE_CAP_FOO_GET 13u   /* 1.3.5 FOOGET */`（下一个没用过的位号；宏名是能力名的大写下划线写法，注释以起始版本开头），并把它或进 `BLE_CAPS`。
 3. App `ui/src/fw-compat.js` 的 `CAPS` 末尾加 `{ key: "fooGet", bit: 13, since: "1.3.5" }`，上面一行注释写这项是什么、没有时 App 怎么做。
 4. 本文第 3 节的表加一行；"固件 x.y.z 的能力位"改成新的值；`M01蓝牙协议.md` 第 8 节写这一版加了什么。
@@ -147,15 +149,15 @@ ACK SYS⇥1.3.4⇥10⇥230.4⇥31⇥1⇥-62⇥UP⇥ON⇥2027-01-15T08:00:00Z⇥b
 
 ## 7. 测试
 
-- `M01/tools/ble-finder/ui/test/fw-compat.test.mjs`：版本号和能力位解析；`CAPS`、`ble_caps.h`、本文第 3 节、三处版本号一致；按各版固件真认的命令模拟 1.0.0、1.1.0、1.2.0、1.3.0、1.3.2、1.3.3（没有能力位）和 1.3.4、以后的 1.5.0（去掉一项、多了不认识的位）、2.0.0，逐项核对 App 发不发、`PAYSET` 带几个参数、`wss://`、一键配置跳过哪些、首页发不发 `SNAPGET`；读不到版本；六种新旧关系的提示；`App.vue` 不自己比版本号；提示 12 种语言。
+- `APP/ui/test/m01-fw-compat.test.mjs`：版本号和能力位解析；`CAPS`、`ble_caps.h`、本文第 3 节、三处版本号一致；按各版固件真认的命令模拟 1.0.0、1.1.0、1.2.0、1.3.0、1.3.2、1.3.3（没有能力位）和 1.3.4、以后的 1.5.0（去掉一项、多了不认识的位）、2.0.0，逐项核对 App 发不发、`PAYSET` 带几个参数、`wss://`、一键配置跳过哪些、首页发不发 `SNAPGET`；读不到版本；六种新旧关系的提示；`App.vue` 不自己比版本号；提示 12 种语言。
 - `M01/tests/host/test_wb2_sim.c` 的"BLE auth gate"场景：没 `AUTH` 时 `STATUS` 回的 `ACK SYS` 带版本和能力位，能力位等于 `BLE_CAPS`。
-- 实机：`测试文档/M01整机测试.html` 的"老固件配新 App"一组。
+- 实机：`M01/测试文档/M01整机测试.html` 的"老固件配新 App"一组。
 
 ## 8. 代码位置
 
 | 内容 | 位置 |
 |---|---|
-| 能力表、判断、提示 | `M01/tools/ble-finder/ui/src/fw-compat.js` |
-| 提示的 12 种语言 | `M01/tools/ble-finder/ui/src/packs-compat.js` |
-| 接法（`fwInfo`、`can()`、`identifyFirmware()`） | `M01/tools/ble-finder/ui/src/App.vue` |
+| 能力表、判断、提示 | `APP/ui/src/m01/fw-compat.js` |
+| 提示的 12 种语言 | `APP/ui/src/m01/packs-compat.js` |
+| 接法（`fwInfo`、`can()`、`identifyFirmware()`） | `APP/ui/src/m01/M01App.vue` |
 | 固件的能力位 | `M01/app/inc/ble_caps.h`，`M01/app/src/wb2.c` 的 `fill_sys()` |

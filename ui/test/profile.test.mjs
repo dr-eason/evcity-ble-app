@@ -1,6 +1,6 @@
 /* 一键配置（配置备份 / 还原）的主机测试。不需要手机和桩：
  *
- *     node --test AC06/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 这里有一台假桩，按固件 wb2.c 的格式应答；中间隔着一层和 MainActivity.knownLine
  * 一样的行首过滤。读取和下发走的是 App 真正用的 readPlan / writePlan / sameSection。 */

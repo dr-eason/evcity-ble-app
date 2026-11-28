@@ -7,7 +7,7 @@
  * 同一个值，存在充电桩的用户页里，断电保留。设置以后屏幕首页马上换过去。
  * 更早的固件不认识这两条，什么都不回。
  *
- * SCREEN_LANGS 的顺序和固件 screen.c 的 s_lang_base[]、文档/迪文屏/工具/lang_pages.py 的
+ * SCREEN_LANGS 的顺序和固件 screen.c 的 s_lang_base[]、AC06/文档/迪文屏/工具/lang_pages.py 的
  * LANGS 一样，test/scrlang.test.mjs 逐项比对。名字用各自语言写，和屏上的列表一样，不翻译。 */
 
 export const SCREEN_LANGS = [

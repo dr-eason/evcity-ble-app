@@ -1,6 +1,6 @@
 /* M01 10 路：ACK SYS / ACK PORTS / ACK PORT / ACK PLIM / ACK ORD 的解析和显示的主机测试：
  *
- *     node --test M01/tools/ble-finder/ui/test/
+ *     node --test APP/ui/test/
  *
  * 样例行取自 文档/04-协议/M01蓝牙协议.md；字段顺序再和固件 app/src/wb2.c 里的格式串、
  * app/src/charge_control.c 里的名字表逐项核对。每一行还要能原样通过手机蓝牙层
@@ -24,7 +24,7 @@ import { FRAME_HEADS, KNOWN_EXACT, KNOWN_PREFIXES, phoneKeeps, splitFrames } fro
 const fixture = (name) => readFileSync(new URL("./fixtures/m01/" + name, import.meta.url), "utf8");
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = resolve(here, "../../../../..");
+const repo = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(repo, path), "utf8");
 const T = (text) => text.replace(/⇥/g, "\t");
 const doc = fixture("M01蓝牙协议.md");
@@ -502,7 +502,7 @@ test("充电记录页：离线刷卡订单的电费、待退费", () => {
     }
     assert.ok(translate(item.id, "共 {n} 条，已读取 {m} 条", { n: 41, m: 32 }).includes("41"), item.id);
   }
-  const vue = read("AC06/tools/ble-finder/ui/src/m01/M01App.vue");
+  const vue = read("APP/ui/src/m01/M01App.vue");
   assert.match(vue, /v-for="row in orderPayRows\(item\)"/);
   assert.match(vue, /@click="loadMoreOrders"/);
   assert.match(vue, /ask\(ordersCommand\(first\), \(text\) => text === "ORDDONE", 12000\)/);

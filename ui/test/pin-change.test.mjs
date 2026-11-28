@@ -1,5 +1,5 @@
 /* 修改密码 / 超级密码、自己画的数字键盘（系统键盘不弹出）。
- *   node --test AC06/tools/ble-finder/ui/test/pin-change.test.mjs
+ *   node --test APP/ui/test/pin-change.test.mjs
  *
  * 一、纯逻辑：超级密码默认值的推导（和固件单测 AC06/tests/host/test_ble_super.c 里的例子对拍）、
  *     PINSET / SUPERGET / SUPERSET 应答、键盘状态机、输两遍、警告确认框的流程、改完以后记住的密码。
@@ -25,10 +25,10 @@ import { typeFromStatus } from "../src/devtype.js";
 import { mountShell, textOf } from "./helpers/mount-shell.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
-const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
-const pad = read("AC06/tools/ble-finder/ui/src/PinPad.vue");
+const vue = read("APP/ui/src/App.vue");
+const pad = read("APP/ui/src/PinPad.vue");
 const template = vue.slice(0, vue.indexOf("<script setup>"));
 const script = vue.slice(vue.indexOf("<script setup>"), vue.indexOf("</script>"));
 const section = (name) => {
@@ -355,7 +355,7 @@ test("密码页、改密码页、键盘组件：没有 input / textarea / select
 });
 
 test("M01 的页面没有动：它还是自己的密码输入框，不用 AC06 的键盘", () => {
-  const m01 = read("AC06/tools/ble-finder/ui/src/m01/M01App.vue");
+  const m01 = read("APP/ui/src/m01/M01App.vue");
   assert.match(m01, /<input v-model="gateInput" class="field" type="password" inputmode="numeric" maxlength="6"/);
   assert.ok(!m01.includes("PinPad") && !m01.includes("pin-pad") && !m01.includes("PINSET") && !m01.includes("SUPERSET"));
   /* AC06 的键盘处理在 M01 模块开着的时候不管事。 */
@@ -383,8 +383,8 @@ test("修改密码的入口在 设置 → 关于；警告框有 取消 / 确认�
   /* 新密码不进 lastSent（resendable 为假），不进日志。 */
   assert.ok(!/console\.(log|info|warn|error)\([^)]*pin/i.test(script));
   /* 原生层：新应答都以 "ACK " 开头，Android 和 iOS 的白名单本来就放行，不用改。 */
-  assert.match(read("AC06/tools/ble-finder/src/com/evcity/acv2/MainActivity.java"), /static boolean knownLineAc06\(String line\) \{[\s\S]*?line\.startsWith\("ACK "\)/);
-  assert.match(read("AC06/tools/ble-ios/Core/Sources/EVCCore/FrameParser.swift"), /"STAT ", "WCFG ", "FLT ", "LIVE ", "ACK "/);
+  assert.match(read("APP/android/src/com/evcity/acv2/MainActivity.java"), /static boolean knownLineAc06\(String line\) \{[\s\S]*?line\.startsWith\("ACK "\)/);
+  assert.match(read("APP/ios/Core/Sources/EVCCore/FrameParser.swift"), /"STAT ", "WCFG ", "FLT ", "LIVE ", "ACK "/);
 });
 
 /* ------------------------------------------------------------------ 三、挂起来点一遍 */
@@ -771,7 +771,7 @@ test("13 种语言：新文案都齐（中文是键，其余 12 种都翻了，�
     }
   }
   /* pin-pad.js 里流程用到的每一句都在 PIN_TEXTS 里。 */
-  const padJs = read("AC06/tools/ble-finder/ui/src/pin-pad.js");
+  const padJs = read("APP/ui/src/pin-pad.js");
   for (const m of padJs.matchAll(/(?:text|note|PAD_MISMATCH =|\? ) ?[:=]? ?"([^"]*[一-鿿][^"]*)"/g)) {
     assert.ok(PIN_TEXTS.includes(m[1]), "PIN_TEXTS 里没有: " + m[1]);
   }

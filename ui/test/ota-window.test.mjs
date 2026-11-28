@@ -1,6 +1,6 @@
 /* 蓝牙 OTA 滑动窗口的主机测试。不需要手机和桩：
  *
- *     node --test AC06/tools/ble-finder/ui/test/*.test.mjs
+ *     node --test APP/ui/test/*.test.mjs
  *
  * 这里有一台假桩，按固件 ota.c 的规则收片和应答：紧接上一片才写入；重发刚写完的那片回 OK
  * 不再写；别的偏移回 FAIL。时间是假的（毫秒计数），不用真等。发送走的是 App 真正用的

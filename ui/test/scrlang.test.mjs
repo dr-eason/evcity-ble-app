@@ -1,6 +1,6 @@
 /* 屏幕语言设置（SCRLANGGET / SCRLANGSET）的主机测试：
  *
- *     node --test AC06/tools/ble-finder/ui/test/scrlang.test.mjs
+ *     node --test APP/ui/test/scrlang.test.mjs
  *
  * 假桩按固件 wb2.c 的规则应答；旧固件对这两条一声不吭。 */
 import test from "node:test";
@@ -17,7 +17,7 @@ import { scrLangPacks } from "../src/packs-scrlang.js";
 import { parseAuthLine, resendable } from "../src/auth.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 test("五种语言，顺序和固件、屏幕工具一样", () => {
@@ -32,9 +32,9 @@ test("五种语言，顺序和固件、屏幕工具一样", () => {
   try {
     const code = "import sys, json; sys.path.insert(0, sys.argv[1]); import lang_pages as lp; " +
       "print(json.dumps([list(lp.LANGS), list(lp.NAMES)]))";
-    names = JSON.parse(execFileSync("python3", ["-c", code, resolve(root, "文档/迪文屏/工具")], { encoding: "utf8" }));
+    names = JSON.parse(execFileSync("python3", ["-c", code, resolve(root, "AC06/文档/迪文屏/工具")], { encoding: "utf8" }));
   } catch (error) {
-    const text = read("文档/迪文屏/工具/lang_pages.py");
+    const text = read("AC06/文档/迪文屏/工具/lang_pages.py");
     assert.match(text, /LANGS = \("en", "es", "pt", "fr", "zh"\)/);
     return;
   }
@@ -159,7 +159,7 @@ test("12 种语言的文案都齐，不是中文键、也不是英文原样", ()
 });
 
 test("App.vue：屏幕语言页、菜单、提示用到的字符串在每种语言里都有", () => {
-  const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+  const vue = read("APP/ui/src/App.vue");
   const block = vue.match(/<section v-else-if="page === 'scrlang'"[\s\S]*?<\/section>/);
   assert.ok(block, "App.vue 里没有屏幕语言页");
   const used = new Set(["屏幕语言", "充电桩屏幕首页的显示语言"]);

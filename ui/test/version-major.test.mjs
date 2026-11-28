@@ -1,6 +1,6 @@
 /* 3.0.0：主版本从 2 跳到 3。App 里所有按版本号开关的地方都要把 3.x 当作“比 2.x 新”：
  *
- *     node --test AC06/tools/ble-finder/ui/test/version-major.test.mjs
+ *     node --test APP/ui/test/version-major.test.mjs
  *
  * App 里按固件版本判断的只有这些：各功能的最低版本（心跳带时间、模组版本、时区、桩时间、
  * 4G、一键配置的分组、IC 卡格数），OTA 选文件时从镜像里读版本（AC06VER=）和降级提示。
@@ -20,7 +20,7 @@ import { lteSupported } from "../src/lte.js";
 import { CARD_SLOTS, CARD_SLOTS_OLD, SECTIONS, blankBody, cardSlotsFor, sectionSkip } from "../src/profile.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "../../../../..");
+const root = resolve(here, "../../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
 const NEW = ["3.0.0", "V3.0.0", "3.0.1", "3.1.0", "3.10.0", "4.0.0", "10.0.0"];
@@ -61,7 +61,7 @@ function grab(vue, name) {
   return vue.slice(start + 1, end + 2);
 }
 
-const vue = read("AC06/tools/ble-finder/ui/src/App.vue");
+const vue = read("APP/ui/src/App.vue");
 const ota = new Function(
   ["verLabel", "versionParts", "isDowngrade", "cStringAt", "firmwareVersion"].map((n) => grab(vue, n)).join("\n") +
   "\nreturn { verLabel, versionParts, isDowngrade, firmwareVersion };",
@@ -97,10 +97,10 @@ test("OTA 选文件：镜像里的 AC06VER=3.0.0 认得出来", () => {
 
 test("版本号三处一致（固件、安卓、iOS），而且是 3.x", () => {
   const fw = read("AC06/user/inc/app_config.h").match(/#define AC06_FW_VERSION\s+"([^"]+)"/)[1];
-  const manifest = read("AC06/tools/ble-finder/AndroidManifest.xml");
+  const manifest = read("APP/android/AndroidManifest.xml");
   const name = manifest.match(/android:versionName="([^"]+)"/)[1];
   const code = Number(manifest.match(/android:versionCode="(\d+)"/)[1]);
-  const ios = read("AC06/tools/ble-ios/Config/Base.xcconfig");
+  const ios = read("APP/ios/Config/Base.xcconfig");
   assert.equal(name, fw);
   assert.equal(ios.match(/^EVC_VERSION = (.+)$/m)[1], fw);
   assert.equal(Number(ios.match(/^EVC_BUILD = (\d+)$/m)[1]), code);
