@@ -39,6 +39,8 @@
 	<string>EVCITY AC uses Bluetooth to find and connect to your EVCITY charger, start or stop charging, and change charger settings.</string>
 	<key>EVCNativeFilePicker</key>
 	<string>$(EVC_NATIVE_FILE_PICKER)</string>
+	<key>EVCH5HotUpdate</key>
+	<string>$(EVC_H5_HOT_UPDATE)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

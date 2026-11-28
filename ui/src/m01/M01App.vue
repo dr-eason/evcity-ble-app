@@ -234,7 +234,7 @@
         </button>
         <div class="card device">
           <span><strong>{{ t('App 版本') }}</strong><small>{{ t('摩托车充电桩 M01') }} · {{ verLabel(M01_MODULE_VERSION) }}</small></span>
-          <em class="ver">{{ appVersion ? verLabel(appVersion) : '—' }}</em>
+          <em class="ver"><bdi dir="ltr">{{ appVersion ? verLabel(appVersion) : '—' }}</bdi> <bdi dir="ltr">·</bdi> {{ t('热更新') }} <bdi dir="ltr">{{ h5RevText }}</bdi></em>
         </div>
       </div>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
@@ -638,13 +638,15 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { SAVE_IDLE, SAVE_SILENT, SAVE_TEXT, createSaveBtns, saveClass, saveLabel, saveLocked } from "./save-btn.js";
 import PrivacyPolicy from "../PrivacyPolicy.vue";
 import CloudFw from "../CloudFw.vue";
 import { languages } from "../i18n.js";
 import { firmwareTypeError } from "../ota-guard.js";
 import { m01Translate } from "./t.js";
+import { h5Rev } from "../app-version.js";
+import { h5RevLabel } from "../h5-update.js";
 import { TABS, isTabPage, rootBack, subpageBack, tabBarShown } from "./tabs.js";
 import { IMPORT_MAX_BYTES, PROFILE_KEY, exportFileName, exportText, importText, makeProfile, storedProfileOk } from "./profile-file.js";
 import { createQueue } from "./ble-queue.js";
@@ -1398,6 +1400,9 @@ function openPrivacy() {
 /* 设置 → 关于：App 版本（AndroidManifest.xml 的 versionName）和 M01 模块对应的固件版本
  * （fw-compat.js 的 APP_VERSION，“固件比 App 旧 / 新”拿它比，和 App 的版本号分开）。 */
 const appVersion = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
+/* 界面热更新的修订号（../h5-update.js）：这一页编译时写进去的 __H5_REV__，接在 App 版本后面
+ * （「V3.04 · 热更新 r0」）。这一行只显示，点了不检查更新。 */
+const h5RevText = h5RevLabel(h5Rev(typeof __H5_REV__ === "number" ? __H5_REV__ : 0));
 const M01_MODULE_VERSION = APP_VERSION;
 function submitGate() {
   const pass = String(gateInput.value || "");
@@ -4057,6 +4062,16 @@ function handle(msg) {
   }
   if (msg.t === "line") applyLine(msg.s || "");
 }
+
+/* 是不是正在发固件、正在读写一键配置：界面热更新下载完以后，这时候不允许「立即切换」（重新加载
+ * 页面会把升级打断）。报给 App.vue 算 linkState（它 provide 的 evcM01Busy；单独挂这个组件时没有，跳过）。 */
+const reportBusy = inject("evcM01Busy", null);
+watch(() => otaBusy.value || page.value === "profileRun", (on) => {
+  if (typeof reportBusy === "function") reportBusy(!!on);
+}, { immediate: true });
+onBeforeUnmount(() => {
+  if (typeof reportBusy === "function") reportBusy(false);
+});
 
 defineExpose({ handle, connect, tryBack });
 </script>

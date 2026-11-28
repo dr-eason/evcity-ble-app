@@ -15,6 +15,7 @@ import { saveBtnPacks } from "./packs-savebtn.js";
 import { pinPacks } from "./packs-pin.js";
 import { updatePacks } from "./packs-update.js";
 import { cloudPacks } from "./packs-cloud.js";
+import { h5Packs } from "./packs-h5.js";
 
 const en = {
   "返回": "Back",
@@ -874,6 +875,11 @@ Object.keys(cloudPacks).forEach((lang) => {
 Object.keys(updatePacks).forEach((lang) => {
   if (!packs[lang]) return;
   Object.keys(updatePacks[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = updatePacks[lang][key]; });
+});
+/* 界面热更新（h5-update.js、版本号后面的「热更新 rN」）：packs-h5.js。表里已经有的句子不覆盖。 */
+Object.keys(h5Packs).forEach((lang) => {
+  if (!packs[lang]) return;
+  Object.keys(h5Packs[lang]).forEach((key) => { if (!packs[lang][key]) packs[lang][key] = h5Packs[lang][key]; });
 });
 
 export function translate(lang, text, vars) {

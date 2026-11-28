@@ -326,10 +326,55 @@ final class BridgeEventTests: XCTestCase {
 
     func testShimInitAppVersion() {
         let script = ShimInit(locale: "en", gate: [:], mock: false, nativeFilePicker: false,
-                              appVersion: "3.03", appBuild: "30300").script
+                              appVersion: "3.04", appBuild: "30400").script
         let body = String(script.dropFirst("window.__evcInit = ".count).dropLast(2))
         let object = decode(body)
-        XCTAssertEqual(object["appVersion"] as? String, "3.03")
-        XCTAssertEqual(object["appBuild"] as? String, "30300")
+        XCTAssertEqual(object["appVersion"] as? String, "3.04")
+        XCTAssertEqual(object["appBuild"] as? String, "30400")
+    }
+
+    // 界面热更新：没有热更新的值时 ShimInit 的脚本和以前一样（一句 window.__evcInit = {...};）。
+    func testShimInitHasNoH5ByDefault() {
+        let script = ShimInit(locale: "en", gate: [:], mock: false, nativeFilePicker: false).script
+        XCTAssertFalse(script.contains("h5"))
+        XCTAssertEqual(script.components(separatedBy: ";\n").count, 2)
+    }
+
+    // 界面热更新开着时原生另接一句 window.__evcInit.h5 = {...};（EVC.h5Info() 同步返回它）。
+    func testH5ShimInit() {
+        let script = H5ShimInit(rev: 3, hot: true, reloaded: true, rolledBack: false).script
+        XCTAssertTrue(script.hasPrefix("window.__evcInit.h5 = {"))
+        XCTAssertTrue(script.hasSuffix(";\n"))
+        let object = decode(String(script.dropFirst("window.__evcInit.h5 = ".count).dropLast(2)))
+        XCTAssertEqual(object["rev"] as? Int, 3)
+        XCTAssertEqual(object["src"] as? String, "hot")
+        XCTAssertEqual(object["reloaded"] as? Bool, true)
+        XCTAssertEqual(object["rolledBack"] as? Bool, false)
+        let builtin = H5ShimInit(rev: 0, hot: false, reloaded: false, rolledBack: true).script
+        let other = decode(String(builtin.dropFirst("window.__evcInit.h5 = ".count).dropLast(2)))
+        XCTAssertEqual(other["rev"] as? Int, 0)
+        XCTAssertEqual(other["src"] as? String, "builtin")
+        XCTAssertEqual(other["rolledBack"] as? Bool, true)
+    }
+
+    // 界面热更新的五种调用（h5Info 同步返回，在 evc-shim.js 里直接答，不到这里）。
+    private func h5Call(_ name: String, _ arguments: [Any] = []) -> BridgeCall? {
+        let body: [String: Any] = ["m": name, "a": arguments]
+        return BridgeCall.parse(body)
+    }
+
+    func testH5Calls() {
+        XCTAssertEqual(h5Call("h5Check"), .h5Check)
+        XCTAssertEqual(h5Call("h5Cancel"), .h5Cancel)
+        XCTAssertEqual(h5Call("h5Apply"), .h5Apply)
+        XCTAssertEqual(h5Call("h5Ready"), .h5Ready)
+        XCTAssertEqual(h5Call("h5Download", ["EVCITY-AC_H5_V3.04.r3.zip"]), .h5Download(file: "EVCITY-AC_H5_V3.04.r3.zip"))
+        // 文件名不合规矩的不收。
+        for bad in ["", "../EVCITY-AC_H5_V3.04.r3.zip", "EVCITY-AC_V3.04.apk", "EVCITY-AC_H5_V3.04.r03.zip", "x.zip"] {
+            XCTAssertNil(h5Call("h5Download", [bad]), bad)
+        }
+        XCTAssertNil(h5Call("h5Download"))
+        XCTAssertNil(h5Call("h5Download", [3]))
+        XCTAssertNil(h5Call("h5Info"))
     }
 }

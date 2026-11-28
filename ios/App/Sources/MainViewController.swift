@@ -32,6 +32,21 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
         self?.run(script)
     }
 
+    /// 界面热更新（H5Updater.swift）。编译期开关 EVCH5HotUpdate 关着、或者 Mock 模式时是 nil：不看
+    /// Application Support 的 h5/，只加载包里的 Web/index.html，不把热更新的值写进页面（evc-shim.js 就不挂
+    /// h5* 那几个方法），收到 h5* 调用一律不理。
+    private lazy var h5: H5Updater? = makeH5()
+    /// 进程起来之后还没加载过页面（第一次加载要清 staging/、给没报到的修订号记一次启动）。
+    private var h5Cold = true
+    /// 现在这一页是这次运行里重新加载出来的（热更新后、退回后） / 是退回之后加载的。写进 __evcInit.h5。
+    private var h5Reloaded = false
+    private var h5RolledBack = false
+    /// 加载了还没报到过的热更新界面，在等 h5Ready() 的 10 秒计时；只在前台计。
+    private var h5Timer: DispatchWorkItem?
+    private var h5Waiting = false
+    /// 现在这个 WKWebView 被允许读的目录（包里的 Web/ 或 h5/current/）。换了目录就重建 WKWebView。
+    private var readRoot: URL?
+
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return .lightContent
     }
@@ -41,28 +56,12 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
         view.backgroundColor = .black
         gate = (UserDefaults.standard.dictionary(forKey: Self.gateKey) as? [String: String]) ?? [:]
 
-        let configuration = WKWebViewConfiguration()
-        configuration.userContentController.add(WeakHandler(self), name: Self.handlerName)
-        web = WKWebView(frame: .zero, configuration: configuration)
-        web.navigationDelegate = self
-        web.isOpaque = false
-        web.backgroundColor = .black
-        web.scrollView.backgroundColor = .black
-        web.scrollView.contentInsetAdjustmentBehavior = .never
-        web.scrollView.bounces = false
-        web.allowsBackForwardNavigationGestures = false
-        web.allowsLinkPreview = false
-        web.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(web)
-        // 页面不处理刘海和底部横条，所以把 WebView 放在安全区里，四周露出黑底。
-        // Android 那边是给外层加 padding（padForSystemBars），效果一样。
-        let safe = view.safeAreaLayoutGuide
-        NSLayoutConstraint.activate([
-            web.topAnchor.constraint(equalTo: safe.topAnchor),
-            web.bottomAnchor.constraint(equalTo: safe.bottomAnchor),
-            web.leadingAnchor.constraint(equalTo: safe.leadingAnchor),
-            web.trailingAnchor.constraint(equalTo: safe.trailingAnchor),
-        ])
+        installWeb()
+        // 界面热更新的 10 秒报到只在前台计：切到后台就停，回来重新数。
+        NotificationCenter.default.addObserver(self, selector: #selector(onBecomeActive),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onResignActive),
+                                               name: UIApplication.willResignActiveNotification, object: nil)
 
         // 从屏幕左边往里滑 = Android 的返回键 / 侧滑返回。
         let edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(onEdgePan(_:)))
@@ -85,6 +84,47 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
 
     // MARK: 页面
 
+    /// 建 WKWebView 并放进安全区。启动时建一次；界面热更新让页面从包里的 Web/ 换到 h5/current/（或换回来）时
+    /// 重建一个：WKWebView 的本地文件读权限是按目录给的，同一个 WKWebView 上换目录在个别系统版本上有过问题。
+    private func installWeb() {
+        if let old = web {
+            old.navigationDelegate = nil
+            old.configuration.userContentController.removeScriptMessageHandler(forName: Self.handlerName)
+            old.removeFromSuperview()
+        }
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(WeakHandler(self), name: Self.handlerName)
+        web = WKWebView(frame: .zero, configuration: configuration)
+        web.navigationDelegate = self
+        web.isOpaque = false
+        web.backgroundColor = .black
+        web.scrollView.backgroundColor = .black
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.scrollView.bounces = false
+        web.allowsBackForwardNavigationGestures = false
+        web.allowsLinkPreview = false
+        web.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(web)
+        // 页面不处理刘海和底部横条，所以把 WebView 放在安全区里，四周露出黑底。
+        // Android 那边是给外层加 padding（padForSystemBars），效果一样。
+        let safe = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            web.topAnchor.constraint(equalTo: safe.topAnchor),
+            web.bottomAnchor.constraint(equalTo: safe.bottomAnchor),
+            web.leadingAnchor.constraint(equalTo: safe.leadingAnchor),
+            web.trailingAnchor.constraint(equalTo: safe.trailingAnchor),
+        ])
+    }
+
+    private func makeH5() -> H5Updater? {
+        if !AppMode.h5HotUpdate || mock {
+            return nil
+        }
+        return H5Updater { [weak self] script in
+            self?.run(script)
+        }
+    }
+
     private func resource(_ name: String, _ ext: String, in folder: String) -> URL? {
         return Bundle.main.url(forResource: name, withExtension: ext, subdirectory: folder)
     }
@@ -105,7 +145,14 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
                                   nativeFilePicker: AppMode.nativeFilePicker,
                                   appVersion: info?["CFBundleShortVersionString"] as? String ?? "",
                                   appBuild: info?["CFBundleVersion"] as? String ?? "").script
-        var source = initScript + text("evc-shim", "js", in: "Bridge")
+        var source = initScript
+        // 界面热更新开着：把屏幕上这一页是第几版、从哪里来的写进 __evcInit.h5（EVC.h5Info() 同步返回它）。
+        // 关着就不写，evc-shim.js 不挂 h5* 那几个方法。
+        if let h5 = h5 {
+            source += H5ShimInit(rev: h5.loadedRev, hot: h5.loadedHot, reloaded: h5Reloaded,
+                                 rolledBack: h5RolledBack).script
+        }
+        source += text("evc-shim", "js", in: "Bridge")
         if mock {
             source += "\n" + text("mock-evc", "js", in: "Bridge")
         }
@@ -114,13 +161,37 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
 
     private func loadPage() {
         pageReady = false
+        stopH5Timer()
+        h5Waiting = false
+        // 加载哪一份：Application Support 的 h5/current/ 里有合格的热更新界面就加载它（只给这一个目录读权限），
+        // 否则加载包里的 Web/index.html。界面热更新关着（h5 == nil）时只看包里的。
+        var page = resource("index", "html", in: "Web")
+        if let h5 = h5 {
+            let pick = h5.pick(coldStart: h5Cold)
+            h5Cold = false
+            if pick.rolledBack {
+                h5RolledBack = true
+            }
+            if let hot = pick.index {
+                page = hot
+            }
+        }
+        let root = page?.deletingLastPathComponent()
+        if readRoot != nil && root != readRoot {
+            installWeb()
+        }
+        readRoot = root
         let controller = web.configuration.userContentController
         controller.removeAllUserScripts()
         controller.addUserScript(WKUserScript(source: bootScript(),
                                               injectionTime: .atDocumentStart,
                                               forMainFrameOnly: true))
-        if let index = resource("index", "html", in: "Web") {
+        if let index = page {
             web.loadFileURL(index, allowingReadAccessTo: index.deletingLastPathComponent())
+            if let h5 = h5, h5.awaitingReady {
+                h5Waiting = true
+                startH5Timer()
+            }
         } else {
             // 没跑 build_ui.sh 就编了 App。
             web.loadHTMLString("""
@@ -142,6 +213,53 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
 
     /// 页面进程被系统回收（内存紧张时会有）：界面状态已经没了，按重启处理。
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // 这一次重新加载不是热更新造成的，也不算新界面报到失败（10 秒从头数）。
+        h5Reloaded = false
+        h5RolledBack = false
+        restart()
+    }
+
+    // MARK: 界面热更新的 10 秒报到
+
+    private func startH5Timer() {
+        stopH5Timer()
+        if UIApplication.shared.applicationState != .active {
+            return      // 回到前台时 onBecomeActive 再开始数
+        }
+        let timer = DispatchWorkItem { [weak self] in
+            self?.h5ReadyTimedOut()
+        }
+        h5Timer = timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + H5UpdateRules.readyTimeout, execute: timer)
+    }
+
+    private func stopH5Timer() {
+        h5Timer?.cancel()
+        h5Timer = nil
+    }
+
+    @objc private func onBecomeActive() {
+        if h5Waiting {
+            startH5Timer()
+        }
+    }
+
+    @objc private func onResignActive() {
+        stopH5Timer()
+    }
+
+    /// 在前台等了 10 秒新界面还没报到：记进坏名单，退回上一份（没有就用包里的），重新加载。
+    private func h5ReadyTimedOut() {
+        h5Timer = nil
+        guard h5Waiting, let h5 = h5 else {
+            return
+        }
+        h5Waiting = false
+        if h5.rollbackLoaded() == nil {
+            return
+        }
+        h5Reloaded = true
+        h5RolledBack = true
         restart()
     }
 
@@ -157,10 +275,12 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
             return
         }
         if url.isFileURL {
-            // 只放行包里的界面文件。
+            // 只放行包里的界面文件，和界面热更新的那一个文件：解析掉符号链接之后路径正好是
+            // <Application Support>/h5/current/index.html（H5Updater.isCurrentIndex）。别的沙盒文件一律不放。
             let path = url.resolvingSymlinksInPath().path
             let inside = path.hasPrefix(Bundle.main.bundleURL.resolvingSymlinksInPath().path)
                 || path.hasSuffix("/Web/index.html")
+                || (h5?.isCurrentIndex(url) ?? false)
             decisionHandler(inside ? .allow : .cancel)
             return
         }
@@ -221,6 +341,8 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
         case .heartbeatTime(let on):
             link?.setHeartbeatTime(on)
         case .restart:
+            h5Reloaded = false
+            h5RolledBack = false
             restart()
         case .pickFile:
             pickFile()
@@ -230,6 +352,26 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
             link?.setProfile(which)
         case .cloudGet(let id, let url, let kind):
             cloud.get(id: id, url: url, kind: kind)
+        // 界面热更新（H5Updater.swift）。开关关着时 h5 是 nil，这几种调用一律不理。
+        case .h5Check:
+            h5?.check()
+        case .h5Download(let file):
+            h5?.download(file)
+        case .h5Cancel:
+            h5?.cancel()
+        case .h5Ready:
+            h5Waiting = false
+            stopH5Timer()
+            h5?.ready()
+        case .h5Apply:
+            // 重新加载页面，换成磁盘上已经切换好的那一份。和 restart() 一样收拾（停扫、断开蓝牙、丢掉没送出去
+            // 的事件），再由 loadPage() 重新选一次加载哪一份。
+            guard h5 != nil else {
+                return
+            }
+            h5Reloaded = true
+            h5RolledBack = false
+            restart()
         }
     }
 
@@ -238,6 +380,7 @@ final class MainViewController: UIViewController, WKNavigationDelegate, WKScript
     private func restart() {
         link?.shutdown()
         cloud.cancelAll()
+        h5?.cancel()
         UIApplication.shared.isIdleTimerDisabled = false
         pending.removeAll()
         loadPage()

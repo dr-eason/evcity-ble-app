@@ -71,7 +71,7 @@ public enum JSONText {
 }
 
 /// 页面调原生的方法。页面那头是 `window.EVC.xxx(...)`，由 evc-shim.js 转成 `{m: 名字, a: [参数]}`。
-/// `loadGate` / `locale` / `mtu` / `appVersion` / `appBuild` 要同步返回，在 evc-shim.js 里直接答，不到这里。
+/// `loadGate` / `locale` / `mtu` / `appVersion` / `appBuild` / `h5Info` 要同步返回，在 evc-shim.js 里直接答，不到这里。
 public enum BridgeCall: Equatable {
     case scan
     case stopScan
@@ -90,6 +90,15 @@ public enum BridgeCall: Equatable {
     /// 云端固件（AC-33）：让原生 GET 一个地址。id 是页面自己编的，回调时原样带回；kind 是 "text" 或 "bin"。
     /// 地址合不合格在处理时用 CloudRules 查（不合格要回页面一个 "blocked"，所以这里不拦）。
     case cloudGet(id: String, url: String, kind: String)
+    /// 界面热更新（H5Update.swift、App 的 H5Updater.swift）：查有没有新的界面包。结果回 window.__evcH5.onCheck。
+    case h5Check
+    /// 下载、核对、解压、切换刚查到的那个包。文件名不合规矩的在解析时就丢掉。
+    case h5Download(file: String)
+    case h5Cancel
+    /// 重新加载页面，换成磁盘上已经切换好的那一份（会断开蓝牙）。
+    case h5Apply
+    /// 页面挂载好了报到一次；10 秒没报到壳会退回上一份界面。
+    case h5Ready
 
     /// 一条命令能不能发：空的、带换行的不发。和 Java Bridge.send 一样。
     public static func sendable(_ text: String) -> Bool {
@@ -165,6 +174,19 @@ public enum BridgeCall: Equatable {
                 return nil
             }
             return .cloudGet(id: id, url: url, kind: kind)
+        case "h5Check":
+            return .h5Check
+        case "h5Download":
+            guard let file = text(0), H5UpdateRules.parseName(file) != nil else {
+                return nil
+            }
+            return .h5Download(file: file)
+        case "h5Cancel":
+            return .h5Cancel
+        case "h5Apply":
+            return .h5Apply
+        case "h5Ready":
+            return .h5Ready
         default:
             return nil
         }
@@ -300,5 +322,36 @@ public struct ShimInit {
             "appBuild": appBuild,
         ]
         return "window.__evcInit = " + JSONText.encode(object) + ";\n"
+    }
+}
+
+/// 界面热更新要让页面同步拿到的东西（`EVC.h5Info()`）。原生把它写成 `window.__evcInit.h5 = {...};`，接在
+/// ShimInit 那一句后面、evc-shim.js 前面。编译期开关 EVCH5HotUpdate 关着（或 Mock 模式）时不写这一句：
+/// evc-shim.js 看不到 `__evcInit.h5` 就不挂 h5* 那六个方法，页面没有热更新这一步，行为和以前一样。
+public struct H5ShimInit {
+    /// 屏幕上这一页的修订号（内置的界面就是内置的修订号，按约定是 0）。
+    public var rev: Int
+    /// 这一页是不是热更新出来的（Application Support 的 h5/current/）。
+    public var hot: Bool
+    /// 这一页是这次运行里重新加载出来的（热更新后、退回后）：页面不再自动检查更新。
+    public var reloaded: Bool
+    /// 这一页是把起不来的那一份退回之后加载的。
+    public var rolledBack: Bool
+
+    public init(rev: Int, hot: Bool, reloaded: Bool, rolledBack: Bool) {
+        self.rev = rev
+        self.hot = hot
+        self.reloaded = reloaded
+        self.rolledBack = rolledBack
+    }
+
+    public var script: String {
+        let object: [String: Any] = [
+            "rev": rev,
+            "src": hot ? "hot" : "builtin",
+            "reloaded": reloaded,
+            "rolledBack": rolledBack,
+        ]
+        return "window.__evcInit.h5 = " + JSONText.encode(object) + ";\n"
     }
 }

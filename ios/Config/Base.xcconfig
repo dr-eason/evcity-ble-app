@@ -4,8 +4,8 @@
 // ---- 标识和版本：和 Android 的 AndroidManifest.xml 保持一致 ----
 // 占位的 Bundle ID，上架或做描述文件前换成在 Apple Developer 里登记的那个。
 EVC_BUNDLE_ID = com.evcity.ac06ble
-EVC_VERSION = 3.03
-EVC_BUILD = 30300
+EVC_VERSION = 3.04
+EVC_BUILD = 30400
 
 // ---- 签名：全部是占位 ----
 // Team ID（10 位字母数字）。留空时只能编模拟器，或者带 CODE_SIGNING_ALLOWED=NO。
@@ -27,5 +27,13 @@ EVC_MOCK_FLAG_1 = EVC_MOCK_BLE
 // NO：用 WKWebView 自带的 <input type="file"> 菜单（默认）。
 // YES：点「选择固件文件」时直接打开系统的「文件」选择器。
 EVC_NATIVE_FILE_PICKER = NO
+
+// ---- 界面热更新（H5 热更新） ----
+// YES（默认）：壳会查 OTA 文件站上这个 App 版本的界面热更新包，下载到 Application Support 的 h5/ 里并加载。
+// NO：把热更新从 iOS 包里编掉——页面看不到 h5Check（没有热更新这一步，安装包提示只有「知道了」），壳不看
+//     h5/，只加载包里的 Web/index.html，版本后面仍显示「热更新 r0」。App Store 审核不接受「下载并加载本地
+//     H5」时改成 NO 重新出 iOS 包；Android 没有这个开关，不受影响。
+// 命令行：xcodebuild ... EVC_H5_HOT_UPDATE=NO
+EVC_H5_HOT_UPDATE = YES
 
 #include? "Local.xcconfig"

@@ -21,7 +21,7 @@
  * 解析时补不补零一样：3.1.0 = 3.01.00，3.01 = 3.01.00。不手改：来源是仓库根的 VERSION，
  * tools/version/set_version.py 改，check_version.py 和测试会核对。M01 自己的版本号到 1.3.6 为止，
  * 所以能力表里的 since 都是 1.x，3.x 的固件比它们都新；现场 1.3.x 的桩连这个 App 都提示"固件比 App 旧"。 */
-export const APP_VERSION = "3.03";
+export const APP_VERSION = "3.04";
 
 /* ACK SYS 第 11 个字段（能力位）从这一版固件起有。更早的（含 1.3.3）只能按版本号查能力表。 */
 export const CAPS_FIELD_SINCE = "1.3.4";

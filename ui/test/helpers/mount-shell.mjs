@@ -164,6 +164,8 @@ export async function mountShell(opts = {}) {
     locale: () => "zh-CN",
     mtu: () => 247,
   };
+  /* opts.evc：挂载之前就要在的原生方法（比如 UpdateDialog 一挂载就读的 h5Info）。 */
+  Object.assign(evc, opts.evc || {});
   globalThis.EVC = evc;
   if (current && current.close) current.close();
   const root = el("div");

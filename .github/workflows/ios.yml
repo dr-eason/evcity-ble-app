@@ -149,6 +149,13 @@ jobs:
           app="build/DerivedData/Build/Products/Debug-iphonesimulator/EVCITYAC.app"
           test -f "$app/Web/index.html"
           test -f "$app/Bridge/evc-shim.js"
+          # 界面热更新：内置界面的清单要在包里，基座（base）等于包的版本。
+          test -f "$app/Web/manifest.json"
+          version="$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")"
+          if ! grep -q "\"kind\":\"evcity-ac-h5\",\"base\":\"$version\"," "$app/Web/manifest.json"; then
+            echo "::error::Web/manifest.json 的 base 不是包的版本 $version：$(cat "$app/Web/manifest.json")"
+            exit 1
+          fi
           ditto -c -k --keepParent "$app" build/EVCITYAC-simulator.zip
           ls -l build/EVCITYAC-simulator.zip
 

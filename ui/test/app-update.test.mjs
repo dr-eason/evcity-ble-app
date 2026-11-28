@@ -14,6 +14,8 @@ import {
   APK_NAME_RE, AUTO_DELAY_MS, CHECK_WATCHDOG_MS, UPDATE_TEXTS, apkVersion, compareVersions, createUpdater, fmtMB,
   latestApk, normalizeCheck, parseListing, updErrorText, updNew, updPlatform, updStep, updView, versionCore,
 } from "../src/app-update.js";
+import { H5_APPLY_WATCHDOG_MS } from "../src/app-update.js";
+import { H5_CHECK_WATCHDOG_MS } from "../src/h5-update.js";
 import { updatePacks } from "../src/packs-update.js";
 import { mountShell } from "./helpers/mount-shell.mjs";
 import { repoVersion } from "./helpers/repo-version.mjs";
@@ -556,7 +558,7 @@ async function flush() {
 test("扫描页：scan-dock 里隐私协议下面是 App 版本（能点）和不显眼的 Power by 一行", async () => {
   const vue = read(resolve(ui, "src/App.vue"));
   const scan = vue.slice(vue.indexOf(`<section v-if="page === 'scan'"`), vue.indexOf(`<section v-else-if="page === 'charge'"`));
-  assert.match(scan, /<button class="privacy-link"[^>]*>[^<]*<\/button>\s*(?:<!--[^]*?-->\s*)?<p class="appver scan-ver" role="button" tabindex="0"[^>]*@click="checkAppUpdate"[^>]*>\{\{ t\('App 版本'\) \}\} <bdi dir="ltr">\{\{ appVersionShort \}\}<\/bdi><\/p>\s*<p class="powerby"[^>]*>Power by EVCITY &amp;&amp; GCSS<\/p>\s*<\/div>\s*<\/section>/);
+  assert.match(scan, /<button class="privacy-link"[^>]*>[^<]*<\/button>\s*(?:<!--[^]*?-->\s*)?<p class="appver scan-ver" role="button" tabindex="0"[^>]*@click="checkAppUpdate"[^>]*>\{\{ t\('App 版本'\) \}\} <bdi dir="ltr">\{\{ appVersionShort \}\}<\/bdi> <bdi dir="ltr">·<\/bdi> \{\{ t\('热更新'\) \}\} <bdi dir="ltr">\{\{ h5RevText \}\}<\/bdi><\/p>\s*<p class="powerby"[^>]*>Power by EVCITY &amp;&amp; GCSS<\/p>\s*<\/div>\s*<\/section>/);
   /* 设备列表在 dock 外面：dock 不滚、不 fixed，列表自己滚 */
   assert.ok(scan.indexOf('class="scan-list"') < scan.indexOf('class="scan-dock"'));
   assert.match(vue, /\.scan-dock \{ flex: none;[^}]*\}/);
@@ -798,4 +800,682 @@ test("发布脚本：APK 传到「Android APP/」，名字是 EVCITY-AC_V<大版
   /* 脚本传的名字 App 认得出来：新写法两段，历史的三段也认。 */
   assert.equal(apkVersion("EVCITY-AC_V3.02.apk"), "3.02");
   assert.equal(apkVersion("EVCITY-AC_V3.0.9.apk"), "3.0.9");
+});
+
+/* ==== 界面热更新接在后面（方案 7.1–7.5）：先安装包、后热更新，顺序写死 ==== */
+
+const H5_FILE = "EVCITY-AC_H5_V3.04.r3.zip";
+const H5_NEW = { ok: true, base: "3.04", latest: 3, current: 0, staged: -1, hasNew: true, file: H5_FILE, size: 512345 };
+const H5_NONE = { ok: true, base: "3.04", latest: -1, current: 0, staged: -1, hasNew: false, file: "", size: 0 };
+const H5_SAME = { ok: true, base: "3.04", latest: 0, current: 0, staged: -1, hasNew: false, file: "EVCITY-AC_H5_V3.04.r0.zip", size: 400000 };
+const H5_STAGED = Object.assign({}, H5_NEW, { staged: 3, hasNew: false });
+const H5_NOTHING = [H5_NONE, H5_SAME];
+const H5_FAILURES = [{ ok: false, reason: "offline" }, { ok: false, reason: "http" }, { ok: false, reason: "parse" }, null, "{",
+  /* 别的基座的包、文件名对不上：都按没查成算 */
+  Object.assign({}, H5_NEW, { base: "3.05", file: "EVCITY-AC_H5_V3.05.r3.zip" }), Object.assign({}, H5_NEW, { latest: 4 })];
+/* 壳有热更新（h5Check / h5Download）；这一页是基座 3.04 的 r0。 */
+const start = (t, platform) => ({ t, platform, h5: true, h5Base: "3.04", h5Rev: 0 });
+const H_AUTO = start("auto", "android");
+const H_MANUAL = start("manual", "android");
+const h5res = (res, link) => ({ t: "h5check", res, link: link || "free" });
+const noH5 = (out, why) => assert.ok(!out.effects.some((e) => /^h5/.test(e)), (why || "") + " 不该有热更新的动作：" + out.effects.join(","));
+
+test("顺序①：安装包没查成（没网、状态码、看不懂、超时）→ 自动不出声、手动提示失败，之后没有 h5check", () => {
+  for (const platform of ["android", "ios"]) {
+    for (const res of FAILURES) {
+      let out = drive([start("auto", platform), { t: "check", res }]);
+      assert.deepEqual(out.effects, ["check"], platform + " " + JSON.stringify(res));
+      assert.deepEqual(out.toasts, []);
+      assert.equal(out.state.phase, "idle");
+      out = drive([start("manual", platform), { t: "check", res }]);
+      assert.deepEqual(out.effects, ["check"], platform + " " + JSON.stringify(res));
+      assert.deepEqual(out.toasts, ["正在检查更新", "检查更新失败，请检查网络"]);
+      assert.equal(out.state.phase, "idle");
+      /* 就算这时候原生回了一个热更新结果，也不理。 */
+      out = drive([h5res(H5_NEW)], out.state);
+      assert.equal(out.state.phase, "idle");
+      assert.equal(updView(out.state).open, false);
+    }
+    const late = drive([start("manual", platform), { t: "timeout" }]);
+    assert.deepEqual(late.effects, ["check"]);
+    assert.deepEqual(late.toasts, ["正在检查更新", "检查更新失败，请检查网络"]);
+    noH5(drive([start("auto", platform), { t: "timeout" }]), "自动超时");
+  }
+});
+
+test("顺序②：没有新安装包 → 发 h5check；手动检查在第 2 步出结果之前不说「已是最新版本」", () => {
+  for (const platform of ["android", "ios"]) {
+    for (const res of NOTHING_NEWER) {
+      let out = drive([start("auto", platform), { t: "check", res }]);
+      assert.deepEqual(out.effects, ["check", "h5check"], platform + " " + JSON.stringify(res));
+      assert.equal(out.state.phase, "h5-checking");
+      assert.deepEqual(out.toasts, []);
+      assert.equal(updView(out.state).open, false);
+      out = drive([start("manual", platform), { t: "check", res }]);
+      assert.deepEqual(out.effects, ["check", "h5check"]);
+      assert.deepEqual(out.toasts, ["正在检查更新"], "还没到第 2 步的结果：不能先说已是最新");
+    }
+  }
+});
+
+test("顺序③④：有新安装包 → 先弹安装包提示，这时没有 h5check；Android 点「下载安装」之后无论怎样都不查热更新", () => {
+  let out = drive([H_AUTO, { t: "check", res: NEW }]);
+  assert.equal(out.state.phase, "prompt");
+  assert.deepEqual(out.effects, ["check"]);
+  assert.deepEqual(updView(out.state).buttons.map((b) => b.label), ["取消", "下载安装"]);
+  assert.equal(updView(out.state).title, "软件更新");
+  const accepted = [H_AUTO, { t: "check", res: NEW }, { t: "accept" }];
+  const after = [
+    [{ t: "done" }],
+    [{ t: "done" }, { t: "install", s: "started" }],
+    [{ t: "done" }, { t: "install", s: "perm" }, { t: "install", s: "denied" }, { t: "cancel" }],
+    [{ t: "done" }, { t: "install", s: "fail" }, { t: "cancel" }],
+    [{ t: "done" }, { t: "install", s: "fail" }, { t: "retry" }],
+    [{ t: "done" }, { t: "cancel" }],
+    [{ t: "error", reason: "offline" }],
+    [{ t: "error", reason: "offline" }, { t: "cancel" }],
+    [{ t: "error", reason: "badapk" }, { t: "retry" }, { t: "error", reason: "http" }, { t: "cancel" }],
+    [{ t: "progress", pct: 30, done: 3, total: 10 }, { t: "cancel" }],        /* 取消下载 */
+    [{ t: "cancel" }],
+  ];
+  for (const tail of after) {
+    out = drive(accepted.concat(tail));
+    noH5(out, JSON.stringify(tail));
+    assert.notEqual(out.state.phase, "h5-checking", JSON.stringify(tail));
+    /* 这一轮结束以后迟到的热更新结果也不理。 */
+    assert.equal(drive([h5res(H5_NEW)], out.state).state.phase, out.state.phase);
+  }
+  /* 手动检查同样。 */
+  out = drive([H_MANUAL, { t: "check", res: NEW }, { t: "accept" }, { t: "error", reason: "offline" }, { t: "cancel" }]);
+  noH5(out, "手动");
+  assert.equal(out.state.phase, "idle");
+});
+
+test("顺序⑤：Android 在安装包提示上点「取消」→ 发 h5check；这个版本记成取消过", () => {
+  for (const begin of [H_AUTO, H_MANUAL]) {
+    const out = drive([begin, { t: "check", res: NEW }, { t: "cancel" }]);
+    assert.deepEqual(out.effects, ["check", "h5check"], begin.t);
+    assert.equal(out.state.phase, "h5-checking");
+    assert.equal(out.state.apkDeclined, true);
+    assert.deepEqual(out.state.dismissed, ["3.0.9"]);
+    assert.equal(updView(out.state).open, false);
+  }
+  /* 自动检查遇到这次运行里已经取消过的安装包版本：不弹安装包提示，直接进第 2 步。 */
+  const st = Object.assign(updNew(), { dismissed: ["3.0.9"] });
+  const out = drive([H_AUTO, { t: "check", res: NEW }], st);
+  assert.deepEqual(out.effects, ["check", "h5check"]);
+  assert.equal(out.state.phase, "h5-checking");
+  /* 手动检查不看取消过没有：照样先弹安装包提示。 */
+  assert.equal(drive([H_MANUAL, { t: "check", res: NEW }], st).state.phase, "prompt");
+});
+
+test("顺序⑥：iOS 壳有 h5Check 时安装包提示是〔取消〕〔知道了〕，句子不变；「知道了」不查热更新，「取消」才查", () => {
+  const I_AUTO = start("auto", "ios");
+  let out = drive([I_AUTO, { t: "check", res: NEW }]);
+  assert.equal(out.state.phase, "ios");
+  assert.deepEqual(out.effects, ["check"]);
+  const view = updView(out.state);
+  assert.equal(view.text, "有软件更新，请前往 App Store 更新");
+  assert.equal(view.title, "软件更新");
+  assert.deepEqual(view.buttons.map((b) => [b.id, b.label]), [["cancel", "取消"], ["ack", "知道了"]]);
+  assert.equal(view.progress, false);
+  /* 知道了 = 接受：回空闲，不发 h5check；这一版自动检查不再提。 */
+  const acked = drive([{ t: "ack" }], out.state);
+  assert.deepEqual(acked.effects, []);
+  assert.equal(acked.state.phase, "idle");
+  assert.deepEqual(acked.state.dismissed, ["3.0.9"]);
+  assert.equal(drive([h5res(H5_NEW)], acked.state).state.phase, "idle");
+  /* 取消：进热更新检查。 */
+  const declined = drive([{ t: "cancel" }], out.state);
+  assert.deepEqual(declined.effects, ["h5check"]);
+  assert.equal(declined.state.phase, "h5-checking");
+  /* iOS 仍然不下载安装包。 */
+  out = drive([{ t: "accept" }, { t: "retry" }, { t: "install-tap" }, { t: "done" }], out.state);
+  assert.deepEqual(out.effects, []);
+  assert.equal(out.state.phase, "ios");
+  /* 热更新 iOS 也下载：取消安装包 → 有热更新 → 同意 → h5download。 */
+  out = drive([h5res(H5_NEW), { t: "accept" }], declined.state);
+  assert.deepEqual(out.effects, ["h5download:" + H5_FILE]);
+});
+
+test("顺序⑦：壳没有 h5Check（老壳、iOS 把热更新编掉的包）→ 没有第 2 步，iOS 的窗口只有「知道了」", () => {
+  for (const platform of ["android", "ios"]) {
+    for (const t of ["auto", "manual"]) {
+      for (const begin of [{ t, platform }, { t, platform, h5: false, h5Base: "3.04", h5Rev: 0 }]) {
+        for (const res of NOTHING_NEWER) {
+          const out = drive([begin, { t: "check", res }, h5res(H5_NEW)]);
+          assert.deepEqual(out.effects, ["check"], platform + t);
+          assert.equal(out.state.phase, "idle");
+          assert.deepEqual(out.toasts, t === "manual" ? ["正在检查更新", "已是最新版本"] : []);
+        }
+        const out = drive([begin, { t: "check", res: NEW }, { t: "cancel" }]);
+        assert.deepEqual(out.effects, ["check"], platform + t);
+        assert.equal(out.state.phase, "idle");
+      }
+    }
+  }
+  const ios = drive([{ t: "auto", platform: "ios" }, { t: "check", res: NEW }]);
+  assert.deepEqual(updView(ios.state).buttons.map((b) => [b.id, b.label]), [["cancel", "知道了"]]);
+});
+
+test("第 2 步（方案 7.2 的表）：没查成 / 没有新的 —— 自动不出声；手动且没有新安装包才提示；刚取消了安装包提示的不出声", () => {
+  for (const platform of ["android", "ios"]) {
+    /* 第一列：自动检查 */
+    for (const res of [...H5_FAILURES, ...H5_NOTHING]) {
+      const out = drive([start("auto", platform), { t: "check", res: SAME }, h5res(res)]);
+      assert.deepEqual(out.toasts, [], JSON.stringify(res));
+      assert.equal(out.state.phase, "idle");
+      assert.equal(updView(out.state).open, false);
+    }
+    assert.deepEqual(drive([start("auto", platform), { t: "check", res: SAME }, { t: "h5timeout" }]).toasts, []);
+    /* 第二列：手动检查，第 1 步是「没有新安装包」 */
+    for (const res of H5_FAILURES) {
+      const out = drive([start("manual", platform), { t: "check", res: SAME }, h5res(res)]);
+      assert.deepEqual(out.toasts, ["正在检查更新", "检查更新失败，请检查网络"], JSON.stringify(res));
+      assert.equal(out.state.phase, "idle");
+    }
+    for (const res of H5_NOTHING) {
+      const out = drive([start("manual", platform), { t: "check", res: SAME }, h5res(res)]);
+      assert.deepEqual(out.toasts, ["正在检查更新", "已是最新版本"], JSON.stringify(res));
+      assert.equal(out.state.phase, "idle");
+    }
+    /* 查询 30 秒没回：按没查成算 */
+    const late = drive([start("manual", platform), { t: "check", res: SAME }, { t: "h5timeout" }]);
+    assert.deepEqual(late.toasts, ["正在检查更新", "检查更新失败，请检查网络"]);
+    assert.equal(late.state.phase, "idle");
+    /* 第三列：手动检查，刚在安装包提示上点了取消 —— 服务器上明明有新安装包，不能说已是最新，也不报失败 */
+    for (const res of [...H5_FAILURES, ...H5_NOTHING]) {
+      const out = drive([start("manual", platform), { t: "check", res: NEW }, { t: "cancel" }, h5res(res)]);
+      assert.deepEqual(out.toasts, ["正在检查更新"], JSON.stringify(res));
+      assert.equal(out.state.phase, "idle");
+    }
+    const quiet = drive([start("manual", platform), { t: "check", res: NEW }, { t: "cancel" }, { t: "h5timeout" }]);
+    assert.deepEqual(quiet.toasts, ["正在检查更新"]);
+  }
+});
+
+test("第 2 步：有新的 rN → 弹热更新提示（三列都弹）；取消过的 rN 自动不再弹、手动照弹", () => {
+  for (const events of [
+    [H_AUTO, { t: "check", res: SAME }, h5res(H5_NEW)],
+    [H_MANUAL, { t: "check", res: SAME }, h5res(H5_NEW)],
+    [H_MANUAL, { t: "check", res: NEW }, { t: "cancel" }, h5res(H5_NEW)],
+    [H_AUTO, { t: "check", res: NEW }, { t: "cancel" }, h5res(H5_NEW)],
+    [start("auto", "ios"), { t: "check", res: NEW }, { t: "cancel" }, h5res(JSON.stringify(H5_NEW))],
+  ]) {
+    const out = drive(events);
+    assert.equal(out.state.phase, "h5-prompt");
+    const view = updView(out.state);
+    assert.equal(view.open, true);
+    assert.equal(view.title, "界面热更新");
+    assert.equal(view.text, "发现界面热更新 {v}（当前 {c}），是否下载并更新？");
+    assert.deepEqual(view.vars, { v: "r3", c: "r0" });
+    assert.deepEqual(view.buttons.map((b) => [b.id, b.label]), [["cancel", "取消"], ["accept", "下载更新"]]);
+    noH5({ effects: out.effects.filter((e) => e !== "h5check") }, "还没同意");
+  }
+  /* 取消：关掉，什么都不下载；这个 rN 这次运行里自动检查不再弹。 */
+  let out = drive([H_MANUAL, { t: "check", res: SAME }, h5res(H5_NEW), { t: "cancel" }]);
+  assert.deepEqual(out.effects, ["check", "h5check"]);
+  assert.equal(out.state.phase, "idle");
+  assert.deepEqual(out.state.h5Dismissed, [3]);
+  const dismissed = out.state;
+  out = drive([H_AUTO, { t: "check", res: SAME }, h5res(H5_NEW)], dismissed);
+  assert.equal(out.state.phase, "idle", "自动：不弹");
+  assert.deepEqual(out.toasts, []);
+  /* 手动（两种）：照弹。 */
+  out = drive([H_MANUAL, { t: "check", res: SAME }, h5res(H5_NEW)], dismissed);
+  assert.equal(out.state.phase, "h5-prompt");
+  out = drive([H_MANUAL, { t: "check", res: NEW }, { t: "cancel" }, h5res(H5_NEW)], dismissed);
+  assert.equal(out.state.phase, "h5-prompt");
+  /* 更大的修订号：自动也弹。 */
+  out = drive([H_AUTO, { t: "check", res: SAME }, h5res(Object.assign({}, H5_NEW, { latest: 4, file: "EVCITY-AC_H5_V3.04.r4.zip" }))], dismissed);
+  assert.equal(out.state.phase, "h5-prompt");
+  /* 本页已经是 r3（热更新过了）：不提示；原生说的 hasNew 不信。 */
+  out = drive([{ t: "manual", platform: "android", h5: true, h5Base: "3.04", h5Rev: 3 }, { t: "check", res: SAME }, h5res(H5_NEW)]);
+  assert.deepEqual(out.toasts, ["正在检查更新", "已是最新版本"]);
+});
+
+test("同意热更新：h5download → 进度 → 校验解压 → 磁盘切换完（onDone）；free 马上重新加载，linked 让用户选，busy 只提示", () => {
+  const prompt = drive([H_AUTO, { t: "check", res: SAME }, h5res(H5_NEW)]).state;
+  let out = drive([{ t: "accept" }], prompt);
+  assert.deepEqual(out.effects, ["h5download:" + H5_FILE]);
+  assert.equal(out.state.phase, "h5-downloading");
+  let view = updView(out.state);
+  assert.equal(view.text, "正在下载界面热更新 {v}");
+  assert.equal(view.progress, true);
+  assert.deepEqual(view.buttons.map((b) => [b.id, b.label]), [["cancel", "取消下载"]]);
+  out = drive([{ t: "h5progress", pct: 42.9, done: 219801, total: 512345 }], out.state);
+  assert.deepEqual([out.state.phase, out.state.pct, out.state.done, out.state.total], ["h5-downloading", 42, 219801, 512345]);
+  /* 安装包那一套的回调（__evcUpd）串不到热更新上。 */
+  assert.equal(drive([{ t: "progress", pct: 99 }, { t: "done" }, { t: "error", reason: "offline" }], out.state).state.phase, "h5-downloading");
+  out = drive([{ t: "h5progress", pct: 100, done: 512345, total: 512345 }], out.state);
+  assert.equal(out.state.phase, "h5-applying");
+  view = updView(out.state);
+  assert.equal(view.text, "正在校验并解压");
+  assert.deepEqual(view.buttons, [], "这一段没有按钮");
+  const applying = out.state;
+  /* 没连着桩：马上重新加载。 */
+  out = drive([{ t: "h5done", rev: 3, link: "free" }], applying);
+  assert.deepEqual(out.effects, ["h5apply"]);
+  assert.equal(out.state.phase, "h5-applying");
+  assert.deepEqual(out.toasts, []);
+  /* 连着桩：不自动重新加载，让用户选。 */
+  out = drive([{ t: "h5done", rev: 3, link: "linked" }], applying);
+  assert.deepEqual(out.effects, []);
+  assert.equal(out.state.phase, "h5-staged");
+  assert.equal(out.state.h5Staged, 3);
+  view = updView(out.state, "linked");
+  assert.match(view.text, /已准备好。现在切换会断开蓝牙并回到设备列表；也可以下次打开 App 时自动生效。/);
+  assert.deepEqual(view.buttons.map((b) => [b.id, b.label]), [["later", "下次生效"], ["apply", "立即切换"]]);
+  const staged = out.state;
+  /* 立即切换 */
+  out = drive([{ t: "apply", link: "linked" }], staged);
+  assert.deepEqual(out.effects, ["h5apply"]);
+  /* 下次生效：关掉，不重新加载。 */
+  out = drive([{ t: "later", link: "linked" }], staged);
+  assert.deepEqual(out.effects, []);
+  assert.equal(out.state.phase, "idle");
+  assert.equal(out.state.h5Staged, 3);
+  /* 窗口开着的时候开始发固件了：点「立即切换」也不切，只提示。 */
+  out = drive([{ t: "apply", link: "busy" }], staged);
+  assert.deepEqual(out.effects, []);
+  assert.deepEqual(out.toasts, ["界面热更新已下载，下次打开 App 生效"]);
+  assert.equal(out.state.phase, "idle");
+  assert.ok(!updView(staged, "busy").buttons.some((b) => b.id === "apply"));
+  /* 正在发固件 / 下发一键配置：不给「立即切换」，只轻提示下次打开生效，不重新加载。 */
+  out = drive([{ t: "h5done", rev: 3, link: "busy" }], applying);
+  assert.deepEqual(out.effects, []);
+  assert.deepEqual(out.toasts, ["界面热更新已下载，下次打开 App 生效"]);
+  assert.equal(out.state.phase, "idle");
+  assert.equal(updView(out.state, "busy").open, false);
+  /* 进度没报到 100 就直接 onDone 也一样。 */
+  out = drive([{ t: "accept" }, { t: "h5done", rev: 3, link: "free" }], prompt);
+  assert.deepEqual(out.effects, ["h5download:" + H5_FILE, "h5apply"]);
+  /* 让原生重新加载却一直没动：收掉窗口，提示下次打开生效。 */
+  out = drive([{ t: "h5done", rev: 3, link: "free" }, { t: "h5timeout" }], applying);
+  assert.equal(out.state.phase, "idle");
+  assert.deepEqual(out.toasts, ["界面热更新已下载，下次打开 App 生效"]);
+  /* 校验解压一直没回：按失败算，可以重试。 */
+  out = drive([{ t: "h5timeout" }], applying);
+  assert.equal(out.state.phase, "h5-error");
+});
+
+test("热更新出错 / 取消下载：给原因和「重试」，原界面不动；取消下载告诉原生停，迟到的回调不理", () => {
+  const downloading = drive([H_MANUAL, { t: "check", res: SAME }, h5res(H5_NEW), { t: "accept" }]).state;
+  for (const [reason, text] of [["offline", "下载失败，请检查网络后重试"], ["http", "下载失败，请检查网络后重试"],
+    ["sha", "热更新包校验失败，请重试"], ["size", "热更新包校验失败，请重试"], ["zip", "热更新包校验失败，请重试"],
+    ["base", "热更新包校验失败，请重试"], ["rev", "热更新包校验失败，请重试"], ["badfile", "热更新包校验失败，请重试"]]) {
+    for (const from of [downloading, drive([{ t: "h5progress", pct: 100 }], downloading).state]) {
+      const out = drive([{ t: "h5error", reason }], from);
+      assert.equal(out.state.phase, "h5-error", reason);
+      const view = updView(out.state);
+      assert.equal(view.text, text, reason);
+      assert.equal(view.title, "界面热更新");
+      assert.deepEqual(view.buttons.map((b) => [b.id, b.label]), [["cancel", "取消"], ["retry", "重试"]]);
+      noH5(out, reason);
+      const again = drive([{ t: "retry" }], out.state);
+      assert.deepEqual(again.effects, ["h5download:" + H5_FILE]);
+      assert.equal(again.state.phase, "h5-downloading");
+      const closed = drive([{ t: "cancel" }], out.state);
+      assert.deepEqual(closed.effects, []);
+      assert.equal(closed.state.phase, "idle");
+    }
+  }
+  /* 原生自己报的 cancel 不算错 */
+  assert.equal(drive([{ t: "h5error", reason: "cancel" }], downloading).state.phase, "h5-downloading");
+  /* 取消下载 */
+  const out = drive([{ t: "h5progress", pct: 10, done: 1, total: 10 }, { t: "cancel" },
+    { t: "h5progress", pct: 20 }, { t: "h5done", rev: 3, link: "free" }, { t: "h5error", reason: "offline" }], downloading);
+  assert.deepEqual(out.effects, ["h5cancel"]);
+  assert.equal(out.state.phase, "idle");
+  assert.equal(updView(out.state).open, false);
+  /* 名字不合规矩的文件不下载（状态被弄坏也一样）。 */
+  const forced = Object.assign(updNew(), { platform: "android", h5: true, phase: "h5-prompt", h5File: "../x.zip", h5Latest: 3 });
+  assert.deepEqual(drive([{ t: "accept" }], forced).effects, []);
+  assert.deepEqual(drive([{ t: "accept" }], Object.assign({}, forced, { h5: false, h5File: H5_FILE })).effects, []);
+});
+
+test("磁盘上已经切换好、只差重新加载（选过「下次生效」）：手动检查直接回到「已准备好」，不重新下载", () => {
+  for (const events of [
+    [H_MANUAL, { t: "check", res: SAME }, h5res(H5_STAGED, "linked")],
+    [H_MANUAL, { t: "check", res: NEW }, { t: "cancel" }, h5res(H5_STAGED, "linked")],
+    [H_MANUAL, { t: "check", res: SAME }, h5res(H5_STAGED, "free")],
+  ]) {
+    const out = drive(events);
+    assert.equal(out.state.phase, "h5-staged");
+    assert.equal(out.state.h5Staged, 3);
+    assert.ok(!out.effects.includes("h5download:" + H5_FILE));
+    assert.deepEqual(updView(out.state, "linked").vars, { v: "r3" });
+    assert.deepEqual(drive([{ t: "apply", link: "linked" }], out.state).effects, ["h5apply"]);
+  }
+  /* 正在发固件时点版本号：只提示，不弹「立即切换」。 */
+  let out = drive([H_MANUAL, { t: "check", res: SAME }, h5res(H5_STAGED, "busy")]);
+  assert.equal(out.state.phase, "idle");
+  assert.deepEqual(out.toasts, ["正在检查更新", "界面热更新已下载，下次打开 App 生效"]);
+  /* 自动检查：不弹、不出声。 */
+  out = drive([H_AUTO, { t: "check", res: SAME }, h5res(H5_STAGED, "linked")]);
+  assert.equal(out.state.phase, "idle");
+  assert.deepEqual(out.toasts, []);
+  /* 服务器上又有了更大的修订号：照常提示新的。 */
+  out = drive([H_MANUAL, { t: "check", res: SAME }, h5res(Object.assign({}, H5_STAGED, { latest: 4, file: "EVCITY-AC_H5_V3.04.r4.zip" }), "linked")]);
+  assert.equal(out.state.phase, "h5-prompt");
+  assert.deepEqual(updView(out.state).vars, { v: "r4", c: "r0" });
+});
+
+test("现有规则不变：一次运行只自动查一次；弹窗开着、第 2 步在查时再点版本号不重发", () => {
+  let out = drive([H_AUTO, { t: "check", res: SAME }, h5res(H5_NONE), H_AUTO, H_AUTO]);
+  assert.deepEqual(out.effects, ["check", "h5check"]);
+  assert.equal(out.state.autoDone, true);
+  /* 自动检查的第 2 步还在路上时点了版本号：不重发，结果按手动的给。 */
+  out = drive([H_AUTO, { t: "check", res: SAME }, H_MANUAL, h5res(H5_NONE)]);
+  assert.deepEqual(out.effects, ["check", "h5check"]);
+  assert.deepEqual(out.toasts, ["正在检查更新", "已是最新版本"]);
+  /* 热更新的窗口开着：再点不理。 */
+  const prompt = drive([H_AUTO, { t: "check", res: SAME }, h5res(H5_NEW)]).state;
+  out = drive([H_MANUAL, H_AUTO], prompt);
+  assert.deepEqual(out.effects, []);
+  assert.equal(out.state.phase, "h5-prompt");
+  /* 迟到的、多出来的 onCheck 不理。 */
+  out = drive([h5res(H5_NONE), { t: "check", res: NEW }], prompt);
+  assert.equal(out.state.phase, "h5-prompt");
+});
+
+/* ---- 接到 window.EVC / window.__evcH5 上 ---- */
+
+const H5_METHODS = ["updCheck", "updDownload", "updCancel", "updInstall", "h5Check", "h5Download", "h5Cancel", "h5Apply"];
+function h5rig(methods, link) {
+  const calls = [];
+  const api = {};
+  for (const name of methods) api[name] = (...args) => { calls.push([name, ...args]); };
+  const win = {};
+  const toasts = [];
+  const timers = fakeTimers();
+  const box = { link: link || "free" };
+  const upd = createUpdater({
+    api: () => api, win, onToast: (k) => toasts.push(k), setTimeout: timers.set, clearTimeout: timers.clear,
+    linkState: () => box.link, h5Base: "3.04", h5Rev: 0,
+  });
+  return { upd, win, calls, toasts, timers, api, box };
+}
+const names = (r) => r.calls.map((c) => c[0]);
+
+test("整条路（没连着桩）：updCheck → 没有新安装包 → h5Check → 提示 → h5Download → 进度 → onDone → h5Apply", () => {
+  const r = h5rig(H5_METHODS);
+  r.upd.auto();
+  assert.deepEqual(names(r), ["updCheck"]);
+  r.win.__evcUpd.onCheck(SAME);
+  assert.deepEqual(names(r), ["updCheck", "h5Check"]);
+  assert.equal(r.timers.live(), 1, "等热更新结果的计时器");
+  r.win.__evcH5.onCheck(JSON.stringify(H5_NEW));
+  assert.equal(r.timers.live(), 0);
+  assert.equal(r.upd.state().phase, "h5-prompt");
+  r.upd.act("accept");
+  assert.deepEqual(r.calls[2], ["h5Download", H5_FILE]);
+  r.win.__evcH5.onProgress(50, 256172, 512345);
+  assert.equal(r.upd.state().pct, 50);
+  r.win.__evcH5.onProgress(100, 512345, 512345);
+  assert.equal(r.upd.state().phase, "h5-applying");
+  r.win.__evcH5.onDone(3);
+  assert.deepEqual(names(r), ["updCheck", "h5Check", "h5Download", "h5Apply"]);
+  assert.deepEqual(r.toasts, []);
+  r.upd.stop();
+  assert.equal(r.timers.live(), 0);
+});
+
+test("整条路（连着桩 / 正在发固件）：onDone 之后不自动 h5Apply；立即切换才调；busy 时怎么点都不调", () => {
+  const r = h5rig(H5_METHODS, "linked");
+  r.upd.manual();
+  r.win.__evcUpd.onCheck(NEW);
+  assert.equal(r.upd.state().phase, "prompt");
+  r.upd.act("cancel");                               /* 取消安装包 → 才查热更新 */
+  assert.deepEqual(names(r), ["updCheck", "h5Check"]);
+  r.win.__evcH5.onCheck(H5_NEW);
+  r.upd.act("accept");
+  r.win.__evcH5.onDone(3);
+  assert.equal(r.upd.state().phase, "h5-staged");
+  assert.deepEqual(names(r), ["updCheck", "h5Check", "h5Download"]);
+  /* 这时候开始发固件：点「立即切换」不切。 */
+  r.box.link = "busy";
+  r.upd.act("apply");
+  assert.deepEqual(names(r), ["updCheck", "h5Check", "h5Download"]);
+  assert.deepEqual(r.toasts, ["正在检查更新", "界面热更新已下载，下次打开 App 生效"]);
+  /* 再点版本号：原生说磁盘上已经切换好 → 直接「已准备好」，不重新下载；连着桩时点立即切换才 h5Apply。 */
+  r.box.link = "linked";
+  r.upd.manual();
+  r.win.__evcUpd.onCheck(SAME);
+  r.win.__evcH5.onCheck(H5_STAGED);
+  assert.equal(r.upd.state().phase, "h5-staged");
+  r.upd.act("later");
+  assert.equal(r.upd.state().phase, "idle");
+  r.upd.manual();
+  r.win.__evcUpd.onCheck(SAME);
+  r.win.__evcH5.onCheck(H5_STAGED);
+  r.upd.act("apply");
+  assert.deepEqual(names(r), ["updCheck", "h5Check", "h5Download", "updCheck", "h5Check", "updCheck", "h5Check", "h5Apply"]);
+  /* 发固件途中下载完：只提示。 */
+  const b = h5rig(H5_METHODS, "busy");
+  b.upd.auto();
+  b.win.__evcUpd.onCheck(SAME);
+  b.win.__evcH5.onCheck(H5_NEW);
+  b.upd.act("accept");
+  b.win.__evcH5.onDone(3);
+  assert.deepEqual(names(b), ["updCheck", "h5Check", "h5Download"]);
+  assert.deepEqual(b.toasts, ["界面热更新已下载，下次打开 App 生效"]);
+  assert.equal(b.upd.state().phase, "idle");
+});
+
+test("接口层：安装包没查成 / 接受了安装包 → 一次 h5Check 都不调；查询 30 秒超时；取消下载调 h5Cancel；桥抛异常按失败算", () => {
+  let r = h5rig(H5_METHODS);
+  r.upd.manual();
+  r.win.__evcUpd.onCheck({ ok: false, reason: "offline" });
+  r.upd.auto();
+  r.timers.fire(CHECK_WATCHDOG_MS);
+  assert.deepEqual(names(r), ["updCheck", "updCheck"]);
+  assert.ok(!names(r).includes("h5Check"));
+  r = h5rig(H5_METHODS);
+  r.upd.auto();
+  r.win.__evcUpd.onCheck(NEW);
+  r.upd.act("accept");
+  r.win.__evcUpd.onError("offline");
+  r.upd.act("cancel");
+  assert.deepEqual(names(r), ["updCheck", "updDownload"]);
+  /* 30 秒超时 */
+  r = h5rig(H5_METHODS);
+  r.upd.manual();
+  r.win.__evcUpd.onCheck(SAME);
+  r.timers.fire(CHECK_WATCHDOG_MS);
+  assert.equal(r.upd.state().phase, "h5-checking", "安装包那个 15 秒的计时器已经收掉");
+  r.timers.fire(H5_CHECK_WATCHDOG_MS);
+  assert.deepEqual(r.toasts, ["正在检查更新", "检查更新失败，请检查网络"]);
+  assert.equal(r.upd.state().phase, "idle");
+  assert.equal(H5_CHECK_WATCHDOG_MS, 30000);
+  /* 取消下载 */
+  r = h5rig(H5_METHODS);
+  r.upd.auto();
+  r.win.__evcUpd.onCheck(SAME);
+  r.win.__evcH5.onCheck(H5_NEW);
+  r.upd.act("accept");
+  r.upd.act("cancel");
+  assert.deepEqual(names(r), ["updCheck", "h5Check", "h5Download", "h5Cancel"]);
+  /* 让它重新加载却没动：过一会儿收掉窗口。 */
+  r = h5rig(H5_METHODS);
+  r.upd.auto();
+  r.win.__evcUpd.onCheck(SAME);
+  r.win.__evcH5.onCheck(H5_NEW);
+  r.upd.act("accept");
+  r.win.__evcH5.onDone(3);
+  assert.equal(r.upd.state().phase, "h5-applying");
+  r.timers.fire(H5_APPLY_WATCHDOG_MS);
+  assert.equal(r.upd.state().phase, "idle");
+  assert.deepEqual(r.toasts, ["界面热更新已下载，下次打开 App 生效"]);
+  /* 桥抛异常 */
+  const bad = h5rig(["updCheck", "updDownload", "h5Download"]);
+  bad.api.h5Check = () => { throw new Error("bridge gone"); };
+  bad.upd.manual();
+  bad.win.__evcUpd.onCheck(SAME);
+  assert.deepEqual(bad.toasts, ["正在检查更新", "检查更新失败，请检查网络"]);
+  assert.equal(bad.timers.live(), 0);
+  /* 只有 h5Check、没有 h5Download 的壳：不算有热更新。 */
+  const half = h5rig(["updCheck", "h5Check"]);
+  half.upd.manual();
+  half.win.__evcUpd.onCheck(SAME);
+  assert.deepEqual(names(half), ["updCheck"]);
+  assert.deepEqual(half.toasts, ["正在检查更新", "已是最新版本"]);
+});
+
+/* ---- 页面 ---- */
+
+test("页面：扫描页的版本后面接「· 热更新 rN」，「·」和 rN 在 bdi[dir=ltr] 里；首页、关于页、M01 关于页的写法一样", async () => {
+  const app = await mountShell({});
+  await flush();
+  const ver = app.byClass("scan-ver")[0];
+  assert.match(app.text(), /App 版本 (V\d[\d.]*|—) · 热更新 r0/);
+  const bdis = ver.children.filter((n) => n.tag === "bdi");
+  assert.equal(bdis.length, 3);
+  for (const b of bdis) assert.equal(b.props.dir, "ltr");
+  assert.equal(bdis[1].children[0].text, "·");
+  assert.equal(bdis[2].children[0].text, "r0");
+  /* 点了仍然是检查更新。 */
+  assert.equal(typeof ver.props.onClick, "function");
+  app.close();
+  const vue = read(resolve(ui, "src/App.vue"));
+  const tail = ` <bdi dir="ltr">·</bdi> {{ t('热更新') }} <bdi dir="ltr">{{ h5RevText }}</bdi>`;
+  assert.equal(vue.split(tail).length, 4, "扫描页底部、首页底部、设置 → 关于 三处");
+  assert.ok(vue.includes(`<p class="appver" @click="checkAppUpdate">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi>` + tail + `</p>`));
+  assert.ok(vue.includes(`<div class="card device" role="button" tabindex="0" @click="checkAppUpdate" @keydown.enter="checkAppUpdate">`));
+  assert.ok(vue.includes(`<em class="ver"><bdi dir="ltr">{{ appVersionLong }}</bdi>` + tail + `</em>`));
+  assert.match(vue, /const h5RevText = h5RevLabel\(h5Rev\(typeof __H5_REV__ === "number" \? __H5_REV__ : 0\)\);/);
+  const m01 = read(resolve(ui, "src/m01/M01App.vue"));
+  assert.ok(m01.includes(`<em class="ver"><bdi dir="ltr">{{ appVersion ? verLabel(appVersion) : '—' }}</bdi>` + tail + `</em>`));
+  /* 连没连着桩由 App.vue 给（inject），<UpdateDialog> 的写法不变。 */
+  assert.match(vue, /provide\("evcUpdLinkState", updLinkState\);/);
+  assert.match(read(resolve(ui, "src/UpdateDialog.vue")), /inject\("evcUpdLinkState", \(\) => "free"\)/);
+});
+
+test("页面（壳有热更新）：自动检查没有新安装包 → 弹热更新提示；取消后版本不变；点版本号再问；同意后进度条，下完马上 h5Apply", async () => {
+  const app = await mountShell({});
+  const calls = [];
+  for (const name of H5_METHODS) app.evc[name] = (...a) => { calls.push([name, ...a]); };
+  await flush();
+  mock.timers.tick(AUTO_DELAY_MS + 50);
+  assert.deepEqual(calls, [["updCheck"]]);
+  window.__evcUpd.onCheck(SAME);
+  await flush();
+  assert.deepEqual(calls, [["updCheck"], ["h5Check"]]);
+  assert.equal(app.byClass("upd-mask").length, 0);
+  /* 这一页（测试里没有编译时常量）是 r0，基座不比。 */
+  window.__evcH5.onCheck(H5_NEW);
+  await flush();
+  assert.equal(app.byClass("upd-mask").length, 1);
+  assert.match(app.text(), /界面热更新/);
+  assert.match(app.text(), /发现界面热更新 r3（当前 r0），是否下载并更新？/);
+  app.click("取消");
+  await flush();
+  assert.equal(app.byClass("upd-mask").length, 0);
+  assert.equal(calls.length, 2, "取消后什么都没调");
+  assert.match(app.text(), /热更新 r0/);
+  /* 点版本号：先安装包、后热更新，照样再问。 */
+  app.byClass("scan-ver")[0].props.onClick({});
+  await flush();
+  window.__evcUpd.onCheck(SAME);
+  await flush();
+  assert.doesNotMatch(app.text(), /已是最新版本/, "第 2 步没出结果之前不说已是最新");
+  window.__evcH5.onCheck(H5_NEW);
+  await flush();
+  assert.equal(app.byClass("upd-mask").length, 1);
+  app.click("下载更新");
+  await flush();
+  assert.deepEqual(calls[calls.length - 1], ["h5Download", H5_FILE]);
+  window.__evcH5.onProgress(42, 219801, 512345);
+  await flush();
+  assert.match(app.text(), /正在下载界面热更新 r3/);
+  assert.match(app.text(), /42%/);
+  assert.equal(app.byClass("upd-bar")[0].props["aria-valuenow"], 42);
+  window.__evcH5.onProgress(100, 512345, 512345);
+  await flush();
+  assert.match(app.text(), /正在校验并解压/);
+  assert.equal(app.byClass("upd-btn").length, 0, "校验解压时没有按钮");
+  /* 在扫描页（没连着桩）：切换完马上重新加载。 */
+  window.__evcH5.onDone(3);
+  await flush();
+  assert.deepEqual(calls[calls.length - 1], ["h5Apply"]);
+  app.close();
+});
+
+test("页面（壳有热更新）：有新安装包先弹安装包提示，取消后才弹热更新提示；接受了就不出现热更新提示", async () => {
+  let app = await mountShell({});
+  let calls = [];
+  for (const name of H5_METHODS) app.evc[name] = (...a) => { calls.push(name); };
+  await flush();
+  mock.timers.tick(AUTO_DELAY_MS + 50);
+  window.__evcUpd.onCheck(NEW);
+  await flush();
+  assert.match(app.text(), /发现新版本 V3\.0\.9（当前 V3\.0\.8），是否下载并安装？/);
+  assert.deepEqual(calls, ["updCheck"], "安装包提示开着时没查热更新");
+  app.click("取消");
+  await flush();
+  assert.deepEqual(calls, ["updCheck", "h5Check"]);
+  window.__evcH5.onCheck(H5_NEW);
+  await flush();
+  assert.match(app.text(), /发现界面热更新 r3（当前 r0），是否下载并更新？/);
+  app.close();
+  /* 接受安装包：不查热更新。 */
+  app = await mountShell({});
+  calls = [];
+  for (const name of H5_METHODS) app.evc[name] = (...a) => { calls.push(name); };
+  await flush();
+  mock.timers.tick(AUTO_DELAY_MS + 50);
+  window.__evcUpd.onCheck(NEW);
+  await flush();
+  app.click("下载安装");
+  await flush();
+  window.__evcUpd.onError("offline");
+  await flush();
+  app.click("取消");
+  await flush();
+  assert.deepEqual(calls, ["updCheck", "updDownload"]);
+  assert.doesNotMatch(app.text(), /界面热更新/);
+  app.close();
+  /* iOS（只有 updCheck + 热更新）：〔取消〕〔知道了〕；知道了不查热更新。 */
+  app = await mountShell({});
+  calls = [];
+  for (const name of ["updCheck", "h5Check", "h5Download", "h5Cancel", "h5Apply"]) app.evc[name] = (...a) => { calls.push(name); };
+  await flush();
+  mock.timers.tick(AUTO_DELAY_MS + 50);
+  window.__evcUpd.onCheck(NEW);
+  await flush();
+  assert.match(app.text(), /有软件更新，请前往 App Store 更新/);
+  assert.deepEqual(app.byClass("upd-btn").map((b) => b.children.map((c) => c.text).join("")), ["取消", "知道了"]);
+  app.click("知道了");
+  await flush();
+  assert.equal(app.byClass("upd-mask").length, 0);
+  assert.deepEqual(calls, ["updCheck"]);
+  app.close();
+});
+
+test("页面：这一页是热更新后重新加载出来的（h5Info().reloaded）→ 不再自动检查，提示「界面已更新到 rN」；退回来的提示已恢复", async () => {
+  let checks = 0;
+  let app = await mountShell({ evc: { h5Info: () => JSON.stringify({ rev: 3, src: "hot", reloaded: true, rolledBack: false }), updCheck() { checks++; } } });
+  await flush();
+  assert.match(app.text(), /界面已更新到 r\d/);
+  mock.timers.tick(AUTO_DELAY_MS + 500);
+  await flush();
+  assert.equal(checks, 0, "这次运行已经自动查过");
+  /* 手动检查照常。 */
+  app.byClass("scan-ver")[0].props.onClick({});
+  assert.equal(checks, 1);
+  app.close();
+  checks = 0;
+  app = await mountShell({ evc: { h5Info: () => JSON.stringify({ rev: 0, src: "builtin", reloaded: true, rolledBack: true }), updCheck() { checks++; } } });
+  await flush();
+  assert.match(app.text(), /界面热更新没有成功，已恢复原来的界面/);
+  mock.timers.tick(AUTO_DELAY_MS + 500);
+  assert.equal(checks, 0);
+  app.close();
+  /* 冷启动（没有重新加载过）：照常自动查。 */
+  checks = 0;
+  app = await mountShell({ evc: { h5Info: () => JSON.stringify({ rev: 0, src: "builtin", reloaded: false, rolledBack: false }), updCheck() { checks++; } } });
+  await flush();
+  mock.timers.tick(AUTO_DELAY_MS + 50);
+  assert.equal(checks, 1);
+  app.close();
 });

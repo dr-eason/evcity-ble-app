@@ -59,8 +59,9 @@
         <button class="go" @click="scan">{{ scanning ? t('停止扫描') : t('扫描充电桩') }}</button>
         <button class="ghost" @click="restartApp">{{ t('没搜到，关闭重试') }}</button>
         <button class="privacy-link" @click="openPrivacy('scan')">{{ t('隐私协议') }}</button>
-        <!-- App 版本（点一下检查更新，见 app-update.js）和一行不显眼的出品方。出品方是品牌名，不翻译。 -->
-        <p class="appver scan-ver" role="button" tabindex="0" :aria-label="t('检查更新')" @click="checkAppUpdate" @keydown.enter="checkAppUpdate">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi></p>
+        <!-- App 版本后面接界面热更新的修订号（V3.04 · 热更新 r0，见 h5-update.js）；点一下检查更新
+             （先安装包、后热更新，见 app-update.js）。下面一行不显眼的出品方是品牌名，不翻译。 -->
+        <p class="appver scan-ver" role="button" tabindex="0" :aria-label="t('检查更新')" @click="checkAppUpdate" @keydown.enter="checkAppUpdate">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi> <bdi dir="ltr">·</bdi> {{ t('热更新') }} <bdi dir="ltr">{{ h5RevText }}</bdi></p>
         <p class="powerby" dir="ltr">Power by EVCITY &amp;&amp; GCSS</p>
       </div>
     </section>
@@ -112,7 +113,7 @@
       </button>
       <p class="note">{{ t(note) }}</p>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
-      <p class="appver" @click="checkAppUpdate">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi></p>
+      <p class="appver" @click="checkAppUpdate">{{ t('App 版本') }} <bdi dir="ltr">{{ appVersionShort }}</bdi> <bdi dir="ltr">·</bdi> {{ t('热更新') }} <bdi dir="ltr">{{ h5RevText }}</bdi></p>
     </section>
 
     <section v-else-if="page === 'gate'" class="body">
@@ -256,7 +257,7 @@
         </button>
         <div class="card device" role="button" tabindex="0" @click="checkAppUpdate" @keydown.enter="checkAppUpdate">
           <span><strong>{{ t('App 版本') }}</strong></span>
-          <em class="ver">{{ appVersionLong }}</em>
+          <em class="ver"><bdi dir="ltr">{{ appVersionLong }}</bdi> <bdi dir="ltr">·</bdi> {{ t('热更新') }} <bdi dir="ltr">{{ h5RevText }}</bdi></em>
         </div>
       </div>
       <button class="text alone" @click="disconnect">{{ t('断开蓝牙') }}</button>
@@ -801,7 +802,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from "vue";
 import PrivacyPolicy from "./PrivacyPolicy.vue";
 import PinPad from "./PinPad.vue";
 import UpdateDialog from "./UpdateDialog.vue";
@@ -838,6 +839,8 @@ import {
   TOGGLE_GAP_MS, newToggleGuard, resetToggleGuard, toggleBlocked, toggleNextMs, toggleRelease, toggleTap,
 } from "./charge-toggle-guard.js";
 import { appVersionFull, appVersionLabel, resolveAppVersion } from "./app-version.js";
+import { h5Rev } from "./app-version.js";
+import { h5RevLabel } from "./h5-update.js";
 import M01App from "./m01/M01App.vue";
 import { TYPE_AC06, TYPE_LABELS, TYPE_M01, TYPE_UNKNOWN, deviceType, needsSwitch, profileFor, rememberType, typeFromStatus } from "./devtype.js";
 import { firmwareTypeError } from "./ota-guard.js";
@@ -1983,12 +1986,29 @@ function openPrivacy(from) {
 const appVersionInfo = resolveAppVersion(bridge(), typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "");
 const appVersionShort = appVersionLabel(appVersionInfo);
 const appVersionLong = appVersionFull(appVersionInfo);
+/* 界面热更新的修订号（h5-update.js）：这一页编译时写进去的 __H5_REV__，没热更新过是 r0。接在上面三处
+ * App 版本的后面：「V3.04 · 热更新 r0」。 */
+const h5RevText = h5RevLabel(h5Rev(typeof __H5_REV__ === "number" ? __H5_REV__ : 0));
 /* 点版本号（扫描页底部、首页底部、设置 → 关于）：手动检查 App 更新。打开 App 后的自动检查在
  * UpdateDialog.vue 里；规则见 app-update.js。 */
 const updRef = ref(null);
 function checkAppUpdate() {
   if (updRef.value && updRef.value.check) updRef.value.check();
 }
+/* 热更新下载、切换完以后要不要马上重新加载页面，看现在连没连着桩（app-update.js 的 linkState）：
+ *   free    在扫描页，没连着：马上重新加载
+ *   linked  连着桩：让用户选「立即切换 / 下次生效」
+ *   busy    正在发固件、正在读写一键配置（M01 的页面通过 evcM01Busy 报上来）：不允许立即切换
+ * UpdateDialog.vue 和 M01App.vue 用 inject 取，所以模板里这两个组件不用多带属性。 */
+const m01Busy = ref(false);
+provide("evcM01Busy", (on) => { m01Busy.value = !!on; });
+function updLinkState() {
+  if (mod.value === "m01") return m01Busy.value ? "busy" : "linked";
+  if (page.value === "scan") return "free";
+  if (otaBusy.value || page.value === "profileRun") return "busy";
+  return "linked";
+}
+provide("evcUpdLinkState", updLinkState);
 /* 蓝牙/WiFi 模组版本（固件 2.6.12 起，命令和格式见 modver.js）。一次连接读到之后留着，
  * 菜单再打开不重读；没读到（旧固件、模组没回答）时每次打开菜单再试，版本页上可以手动重读。 */
 const modverState = ref("idle");      /* idle / asking / ok / unsupported / empty */

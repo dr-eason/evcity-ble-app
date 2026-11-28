@@ -62,4 +62,18 @@ enum AppMode {
         }
         return false
     }
+
+    /// Info.plist 的 EVCH5HotUpdate（Config/Base.xcconfig 的 EVC_H5_HOT_UPDATE，默认 YES）：界面热更新的
+    /// 编译期开关。关着时壳不看 Application Support 的 h5/、只加载包里的 Web/index.html，页面看不到
+    /// h5Check（没有热更新这一步）。没有这一项当关着。
+    static var h5HotUpdate: Bool {
+        let value = Bundle.main.object(forInfoDictionaryKey: "EVCH5HotUpdate")
+        if let flag = value as? Bool {
+            return flag
+        }
+        if let text = value as? String {
+            return ["YES", "TRUE", "1"].contains(text.uppercased())
+        }
+        return false
+    }
 }

@@ -8,6 +8,7 @@ Core/.build/
 
 # build_ui.sh 拷进来的 Vue 界面（由 ui 源码编出来，不单独维护）
 App/Resources/Web/index.html
+App/Resources/Web/manifest.json
 
 # 本机的签名设置
 Config/Local.xcconfig

@@ -3,6 +3,8 @@
  *
  * 原生在页面开始加载前注入三段，顺序是：
  *   1. window.__evcInit = { locale, gate, mock, nativeFilePicker, appVersion, appBuild };
+ *      界面热更新开着（Info.plist 的 EVCH5HotUpdate）时原生再接一句
+ *      window.__evcInit.h5 = { rev, src, reloaded, rolledBack };
  *   2. 本文件；
  *   3. mock-evc.js（只在 Mock BLE 模式）。
  *
@@ -10,7 +12,8 @@
  *   locale()   → 加载页面时原生写进 __evcInit 的系统语言；
  *   appVersion() / appBuild() → 原生写进 __evcInit 的 Bundle 版本号和构建号（Android 读 PackageInfo）；
  *   loadGate() → 加载页面时原生把存着的密码表整张写进 __evcInit.gate，saveGate 同时改这张表和原生；
- *   mtu()      → 原生每次协商出新值就调 __evcNative.setMtu()。 */
+ *   mtu()      → 原生每次协商出新值就调 __evcNative.setMtu()；
+ *   h5Info()   → 加载页面时原生写进 __evcInit.h5 的那几个值（屏幕上这一页是第几版、从哪里来的）。 */
 (function () {
   "use strict";
   if (window.EVC) return;
@@ -103,6 +106,28 @@
    * window.__evcUpd.onCheck({ok, latest, current, hasNew, file})。iOS 只有这一个：没有 updDownload /
    * updInstall，界面看到没有 updDownload 就只提示「请前往 App Store 更新」。不走 Mock。 */
   window.EVC.updCheck = function () { post("updCheck"); };
+
+  /* 界面热更新（ui/src/h5-update.js；原生是 H5Updater.swift）：和 Android 同样的六个方法。原生去查文件站上
+   * 这个 App 版本的界面包、下载、核对 SHA-256、解压、切换，结果回 window.__evcH5.onCheck / onProgress /
+   * onDone / onError。不走 Mock。
+   * 只有原生写了 __evcInit.h5 才挂：编译期开关 EVCH5HotUpdate 关着（或 Mock 模式）时这六个方法都没有，
+   * 页面看不到 h5Check 就没有热更新这一步，安装包提示只有「知道了」，行为和以前一样。 */
+  if (init.h5 && typeof init.h5 === "object") {
+    var h5 = init.h5;
+    window.EVC.h5Info = function () {
+      return JSON.stringify({
+        rev: typeof h5.rev === "number" ? h5.rev : 0,
+        src: h5.src === "hot" ? "hot" : "builtin",
+        reloaded: h5.reloaded === true,
+        rolledBack: h5.rolledBack === true
+      });
+    };
+    window.EVC.h5Check = function () { post("h5Check"); };
+    window.EVC.h5Download = function (file) { post("h5Download", [file == null ? "" : String(file)]); };
+    window.EVC.h5Cancel = function () { post("h5Cancel"); };
+    window.EVC.h5Apply = function () { post("h5Apply"); };
+    window.EVC.h5Ready = function () { post("h5Ready"); };
+  }
 
   /* 原生调页面用的入口。 */
   window.__evcNative = {

@@ -11,7 +11,8 @@
 #
 # 注意：vite 的配置（ui/vite.config.js）会把单文件的 index.html 写到 ui 旁边：AC-V2 里是 Android 壳的
 # ../android/assets/index.html（APP/android/assets），公开仓里是 ../assets/index.html。写之前先清空那个目录，
-# 也就是说跑这个脚本等于顺便重编了 Android 用的界面文件。
+# 也就是说跑这个脚本等于顺便重编了 Android 用的界面文件。index.html 旁边还有一份 manifest.json（界面热更新
+# 的清单：这份界面是哪个 App 版本的第几版），两个文件一起拷进 App/Resources/Web/。
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -63,11 +64,25 @@ if ! grep -q "evcTryBack" "$SINGLE"; then
   echo "$SINGLE 不像是这个 App 的界面（里面没有 evcTryBack）。" >&2
   exit 1
 fi
+# 界面热更新：index.html 旁边的 manifest.json（{"kind":"evcity-ac-h5","base":…,"rev":…}，vite 一起写的）说明
+# 包里内置的这份界面是哪个 App 版本的第几版（按约定是 r0），要和 index.html 一起拷进 App。
+MANIFEST="$(dirname "$SINGLE")/manifest.json"
+if [ ! -s "$MANIFEST" ]; then
+  echo "没有找到 $MANIFEST（界面热更新的清单，和 index.html 一起编出来）。" >&2
+  echo "去掉 --no-build 再跑一次。" >&2
+  exit 1
+fi
+if ! grep -q '"kind":"evcity-ac-h5"' "$MANIFEST"; then
+  echo "$MANIFEST 不是界面热更新的清单（里面没有 \"kind\":\"evcity-ac-h5\"）。" >&2
+  exit 1
+fi
 
 WEB_DIR="$HERE/App/Resources/Web"
 mkdir -p "$WEB_DIR"
 cp "$SINGLE" "$WEB_DIR/index.html"
+cp "$MANIFEST" "$WEB_DIR/manifest.json"
 echo "已拷贝：$WEB_DIR/index.html（$(wc -c < "$WEB_DIR/index.html" | tr -d ' ') 字节）"
+echo "已拷贝：$WEB_DIR/manifest.json（$(tr -d '\n' < "$WEB_DIR/manifest.json")）"
 
 if ! bash "$HERE/scripts/make_icon.sh"; then
   if [ "$(uname -s)" = "Darwin" ]; then

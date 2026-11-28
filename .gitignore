@@ -11,6 +11,7 @@ ios/*.xcworkspace/
 ios/.swiftpm/
 ios/Core/.build/
 ios/App/Resources/Web/index.html
+ios/App/Resources/Web/manifest.json
 ios/Config/Local.xcconfig
 
 # 签名材料一律不进仓库

@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appVersionFull, appVersionLabel, cleanVersion, resolveAppVersion } from "../src/app-version.js";
+import { appVersionH5Text, appVersionWithH5, h5Rev } from "../src/app-version.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ui = resolve(here, "..");
@@ -78,9 +79,9 @@ test("界面：首页底部和关于页都用 app-version.js 的结果，首页�
   /* 首页（立即充电）这一段里，「断开蓝牙」后面一行版本号。 */
   const charge = vue.slice(vue.indexOf(`<section v-else-if="page === 'charge'"`), vue.indexOf(`<section v-else-if="page === 'gate'"`));
   assert.ok(charge.length > 0);
-  assert.match(charge, /<button class="text alone" @click="disconnect">\{\{ t\('断开蓝牙'\) \}\}<\/button>\s*<p class="appver" @click="checkAppUpdate">\{\{ t\('App 版本'\) \}\} <bdi dir="ltr">\{\{ appVersionShort \}\}<\/bdi><\/p>\s*<\/section>/);
+  assert.match(charge, /<button class="text alone" @click="disconnect">\{\{ t\('断开蓝牙'\) \}\}<\/button>\s*<p class="appver" @click="checkAppUpdate">\{\{ t\('App 版本'\) \}\} <bdi dir="ltr">\{\{ appVersionShort \}\}<\/bdi> <bdi dir="ltr">·<\/bdi> \{\{ t\('热更新'\) \}\} <bdi dir="ltr">\{\{ h5RevText \}\}<\/bdi><\/p>\s*<\/section>/);
   /* 关于页。 */
-  assert.match(vue, /<strong>\{\{ t\('App 版本'\) \}\}<\/strong><\/span>\s*<em class="ver">\{\{ appVersionLong \}\}<\/em>/);
+  assert.match(vue, /<strong>\{\{ t\('App 版本'\) \}\}<\/strong><\/span>\s*<em class="ver"><bdi dir="ltr">\{\{ appVersionLong \}\}<\/bdi> <bdi dir="ltr">·<\/bdi> \{\{ t\('热更新'\) \}\} <bdi dir="ltr">\{\{ h5RevText \}\}<\/bdi><\/em>/);
   /* 不再直接拿 __APP_VERSION__ 显示。 */
   assert.doesNotMatch(vue, /verLabel\(appVersion\)/);
   /* 版本行是普通排版，不是 fixed，靠 .app.tabbed 的底边距让开标签栏。 */
@@ -159,4 +160,36 @@ test("iOS shim 真跑一遍：appVersion() / appBuild() 原样返回 __evcInit �
   evc = run({ appVersion: 3, appBuild: {} });
   assert.equal(evc.appVersion(), "");
   assert.equal(evc.appBuild(), "");
+});
+
+/* ---- 版本号后面的界面热更新修订号（h5-update.js） ---- */
+
+test("带修订号的写法：V3.04 · 热更新 r0；关于页带构建号 V3.04 (30400) · 热更新 r3；没热更新过也显示 r0", () => {
+  const info = { version: "3.04", build: "30400", source: "native" };
+  assert.equal(appVersionH5Text(info, 0), "V3.04 · 热更新 r0");
+  assert.equal(appVersionH5Text(info, 3), "V3.04 · 热更新 r3");
+  assert.equal(appVersionH5Text(info, 3, true), "V3.04 (30400) · 热更新 r3");
+  assert.equal(appVersionH5Text(info, 0, true), "V3.04 (30400) · 热更新 r0");
+  assert.deepEqual(appVersionWithH5(info, 12, true), { version: "V3.04 (30400)", sep: "·", word: "热更新", rev: "r12" });
+  assert.deepEqual(appVersionWithH5(info, 12), { version: "V3.04", sep: "·", word: "热更新", rev: "r12" });
+  /* 没有构建号（老壳，版本是编译时的）：长短写法一样。 */
+  assert.equal(appVersionH5Text({ version: "3.04", build: "", source: "build" }, 2, true), "V3.04 · 热更新 r2");
+  /* App 版本是 "—" 时：修订号照常显示。 */
+  assert.equal(appVersionH5Text({ version: "", build: "", source: "none" }, 0), "— · 热更新 r0");
+  assert.equal(appVersionH5Text(null, 5, true), "— · 热更新 r5");
+});
+
+test("修订号：__H5_REV__ 没有或不是 0–999999 的整数时当 0", () => {
+  assert.equal(h5Rev(0), 0);
+  assert.equal(h5Rev(3), 3);
+  assert.equal(h5Rev(999999), 999999);
+  for (const bad of [undefined, null, "", "3", "r3", -1, 1.5, NaN, Infinity, 1000000, {}, true]) assert.equal(h5Rev(bad), 0, String(bad));
+  assert.equal(appVersionH5Text({ version: "3.04", build: "" }, undefined), "V3.04 · 热更新 r0");
+  assert.equal(appVersionH5Text({ version: "3.04", build: "" }, "7"), "V3.04 · 热更新 r0");
+});
+
+test("修订号不影响原来的写法：appVersionLabel / appVersionFull 的返回值不变", () => {
+  const info = { version: "3.04", build: "30400", source: "native" };
+  assert.equal(appVersionLabel(info), "V3.04");
+  assert.equal(appVersionFull(info), "V3.04 (30400)");
 });
